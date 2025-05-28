@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
           },
         ],
         temperature: 0.7,
-        max_tokens: 1000,
+        max_tokens: 1500,
       }),
     })
 
@@ -45,16 +45,38 @@ export async function POST(req: NextRequest) {
     // Try to parse as JSON for subtopics (first message)
     if (!session.subtopics || session.subtopics.length === 0) {
       try {
-        // Remove triple backticks and optional "json" label
-        const cleaned = content
-          .replace(/```json\s*/i, '')
-          .replace(/```/g, '')
-          .trim();
+        // Extract JSON from markdown code blocks
+        let cleaned = content;
+        
+        // Remove markdown code blocks with optional language identifier
+        cleaned = cleaned.replace(/```(?:json)?\s*/gi, '');
+        cleaned = cleaned.replace(/```\s*/g, '');
+        
+        // Find the JSON object (starts with { and ends with })
+        const jsonStart = cleaned.indexOf('{');
+        const jsonEnd = cleaned.lastIndexOf('}');
+        
+        if (jsonStart !== -1 && jsonEnd !== -1 && jsonEnd > jsonStart) {
+          cleaned = cleaned.substring(jsonStart, jsonEnd + 1);
+        }
+        
+        cleaned = cleaned.trim();
+        
+        console.log("[API/llm] Attempting to parse cleaned JSON:", cleaned.substring(0, 200) + "...");
         const parsed = JSON.parse(cleaned);
-        console.log("[API/llm] Parsed LLM content:", parsed);
-        return NextResponse.json({ content: parsed.introduction, subtopics: parsed.subtopics });
+        console.log("[API/llm] Successfully parsed LLM content:", parsed);
+        
+        // Handle cases where introduction might be an object with content property
+        let introductionContent = parsed.introduction;
+        if (typeof introductionContent === 'object' && introductionContent.content) {
+          introductionContent = introductionContent.content;
+        }
+        
+        return NextResponse.json({ content: introductionContent, subtopics: parsed.subtopics });
       } catch (e) {
-        console.error("[API/llm] Failed to parse LLM content as JSON:", content, e);
+        console.error("[API/llm] Failed to parse LLM content as JSON:", e);
+        console.error("[API/llm] Original content:", content);
+        // Fallback: return the content as-is
         return NextResponse.json({ content });
       }
     }

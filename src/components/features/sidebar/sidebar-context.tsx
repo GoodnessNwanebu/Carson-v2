@@ -24,16 +24,28 @@ export function useSidebarState() {
 }
 
 export function SidebarProvider({ children }: { children: ReactNode }) {
-  const [collapsed, setCollapsed] = useState(false)
-  const [sidebarOpen, setSidebarOpen] = useState(true)
   const isMobile = useMediaQuery("(max-width: 768px)")
+  
+  // Set initial state based on screen size to prevent flash
+  const [collapsed, setCollapsed] = useState(() => {
+    // On server-side, assume desktop (will be corrected on client)
+    if (typeof window === 'undefined') return false
+    return window.innerWidth <= 768
+  })
+  
+  const [sidebarOpen, setSidebarOpen] = useState(() => {
+    // On server-side, assume desktop (will be corrected on client)
+    if (typeof window === 'undefined') return true
+    return window.innerWidth > 768
+  })
 
-  // Close sidebar by default on mobile
+  // Update state when screen size changes
   useEffect(() => {
     if (isMobile) {
       setCollapsed(true)
       setSidebarOpen(false)
     } else {
+      setCollapsed(false)
       setSidebarOpen(true)
     }
   }, [isMobile])

@@ -14,6 +14,9 @@ export interface Subtopic {
   title: string;
   status: SubtopicStatus;
   history: Message[];
+  questionsAsked: number;
+  correctAnswers: number;
+  needsExplanation: boolean;
 }
 
 export interface CarsonSessionContext {
@@ -22,4 +25,9 @@ export interface CarsonSessionContext {
   subtopics: Subtopic[];
   currentSubtopicIndex: number;
   history: Message[];
+  currentQuestionType: 'parent' | 'child' | 'checkin';
+  questionsAskedInCurrentSubtopic: number;
+  correctAnswersInCurrentSubtopic: number;
+  currentSubtopicState: 'assessing' | 'explaining' | 'checking' | 'complete';
+  shouldTransition: boolean;
 } 

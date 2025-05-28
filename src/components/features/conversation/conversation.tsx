@@ -6,27 +6,30 @@ import { useState, useRef, useEffect } from "react"
 import { useKnowledgeMap } from "../knowledge-map/knowledge-map-context"
 import { useSession } from "./session-context"
 import { cn } from "@/lib/utils"
-import { Plus, Paperclip, ArrowUp } from "lucide-react"
+import { Plus, Paperclip, ArrowUp, AlertCircle, RefreshCw } from "lucide-react"
 import { useSidebarState } from "../sidebar/sidebar-context"
-import { generatePrompt } from "@/lib/prompts/promptEngine"
 import { callLLM } from "@/lib/prompts/llm-service"
-import { Subtopic, Message } from "@/lib/prompts/carsonTypes"
+import { CarsonSessionContext } from "@/lib/prompts/carsonTypes"
 import { v4 as uuidv4 } from 'uuid';
+import { assessUserResponse, updateSessionAfterAssessment } from "@/lib/prompts/assessmentEngine";
+import { CompletionCelebration } from "../knowledge-map/knowledge-map-animations";
 
 // Accept initialTopic and onInitialTopicUsed as props
 export function Conversation({ initialTopic, onInitialTopicUsed }: { initialTopic?: string | null, onInitialTopicUsed?: () => void }) {
   console.log("[Conversation] Component rendered");
   const [input, setInput] = useState("")
-  const { updateTopicStatus, setTopics, setCurrentTopicName, isLoading, setIsLoading } = useKnowledgeMap()
-  const { session, startSession, addMessage } = useSession()
+  const { updateTopicStatus, updateTopicProgress, setTopics, setCurrentTopicName, isLoading, setIsLoading, setCurrentSubtopicIndex } = useKnowledgeMap()
+  const { session, startSession, addMessage, updateSession, moveToNextSubtopic, checkSubtopicCompletion, isSessionComplete } = useSession()
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const { isMobile } = useSidebarState()
   const [isScrolled, setIsScrolled] = useState(false)
-  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false)
   const [initialTopicSubmitted, setInitialTopicSubmitted] = useState(false);
   const hasSubmittedInitialTopic = useRef(false);
+  const [lastCarsonQuestion, setLastCarsonQuestion] = useState<string>("");
+  const [showCelebration, setShowCelebration] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   // Extracted message submission logic
   const submitMessage = async (messageContent: string) => {
@@ -34,6 +37,7 @@ export function Conversation({ initialTopic, onInitialTopicUsed }: { initialTopi
 
     setInput("");
     setIsLoading(true);
+    setError(null); // Clear any existing errors
 
     if (isMobile) {
       inputRef.current?.blur();
@@ -47,7 +51,7 @@ export function Conversation({ initialTopic, onInitialTopicUsed }: { initialTopi
         setCurrentTopicName(messageContent);
 
         const userMessage = { id: uuidv4(), role: "user" as const, content: messageContent };
-        addMessage(userMessage); // Optimistically add user message for instant UI
+        // Don't add message optimistically here - wait for successful response
 
         const response = await callLLM({
           sessionId: newSessionId,
@@ -55,10 +59,20 @@ export function Conversation({ initialTopic, onInitialTopicUsed }: { initialTopi
           subtopics: [],
           currentSubtopicIndex: 0,
           history: [userMessage],
+          currentQuestionType: 'parent',
+          questionsAskedInCurrentSubtopic: 0,
+          correctAnswersInCurrentSubtopic: 0,
+          currentSubtopicState: 'assessing',
+          shouldTransition: false,
         });
 
         const assistantMessage = { id: uuidv4(), role: "assistant" as const, content: response.content };
-        addMessage(assistantMessage);
+        setLastCarsonQuestion(response.content); // Store Carson's question for assessment
+
+        // Update session with complete conversation and subtopics
+        const sessionUpdate: Partial<CarsonSessionContext> = {
+          history: [userMessage, assistantMessage]
+        };
 
         if (response.subtopics) {
           setTopics(
@@ -68,17 +82,77 @@ export function Conversation({ initialTopic, onInitialTopicUsed }: { initialTopi
               status: "unassessed",
             }))
           );
+          
+          sessionUpdate.subtopics = response.subtopics.map((sub) => ({
+            id: sub.id,
+            title: sub.title,
+            status: "unassessed" as const,
+            history: [],
+            questionsAsked: 0,
+            correctAnswers: 0,
+            needsExplanation: false,
+          }));
         }
-      } else {
-        // Ongoing conversation
-        const userMessage = { id: uuidv4(), role: "user" as const, content: messageContent };
-        addMessage(userMessage); // Optimistically add user message for instant UI
 
-        // Build the session for LLM with the new user message included
+        updateSession(sessionUpdate);
+      } else {
+        // Ongoing conversation - assess user response and update session
+        const userMessage = { id: uuidv4(), role: "user" as const, content: messageContent };
+        // Don't add message optimistically here - wait for successful response
+
+        // Assess the user's response if we have subtopics and a previous question
+        let sessionUpdates: Partial<CarsonSessionContext> = {};
+        let assessmentResult = null;
+        
+        if (session.subtopics.length > 0 && lastCarsonQuestion) {
+          assessmentResult = assessUserResponse(messageContent, session);
+          sessionUpdates = updateSessionAfterAssessment(session, assessmentResult);
+          
+          console.log("[Conversation] Assessment result:", assessmentResult);
+          
+          // Update knowledge map progress and status based on assessment
+          const currentSubtopic = session.subtopics[session.currentSubtopicIndex];
+          if (currentSubtopic) {
+            // Update progress tracking
+            updateTopicProgress(currentSubtopic.id, {
+              questionsAnswered: (sessionUpdates.questionsAskedInCurrentSubtopic ?? session.questionsAskedInCurrentSubtopic) + 1,
+              totalQuestions: 3, // Assuming 3 questions per subtopic
+              currentQuestionType: sessionUpdates.currentQuestionType ?? session.currentQuestionType
+            });
+            
+            // Update status based on assessment
+            switch (assessmentResult.answerQuality) {
+              case 'excellent':
+              case 'good':
+                updateTopicStatus(currentSubtopic.id, "green");
+                // Show celebration for excellent performance
+                if (assessmentResult.answerQuality === 'excellent') {
+                  setShowCelebration(true);
+                }
+                break;
+              case 'partial':
+                updateTopicStatus(currentSubtopic.id, "yellow");
+                break;
+              case 'incorrect':
+              case 'confused':
+                updateTopicStatus(currentSubtopic.id, "red");
+                break;
+            }
+          }
+        }
+
+        // Build the session for LLM with the new user message and assessment context
         const updatedSession = {
           ...session,
+          ...sessionUpdates,
           history: [...session.history, userMessage],
+          lastAssessment: assessmentResult ? {
+            answerQuality: assessmentResult.answerQuality,
+            nextAction: assessmentResult.nextAction,
+            reasoning: assessmentResult.reasoning
+          } : undefined
         };
+
         // Only generate subtopics if they haven't been generated yet
         let response;
         if (!session.subtopics || session.subtopics.length === 0) {
@@ -97,20 +171,52 @@ export function Conversation({ initialTopic, onInitialTopicUsed }: { initialTopi
             );
           }
         } else {
-          // Socratic Q&A only, do not expect subtopics
+          // Socratic Q&A with assessment-driven responses
           response = await callLLM(updatedSession);
         }
 
         const assistantMessage = { id: uuidv4(), role: "assistant" as const, content: response.content };
-        addMessage(assistantMessage);
+        setLastCarsonQuestion(response.content); // Store Carson's new question/response
+        
+        // Update the session with the complete conversation including the new assistant message
+        updateSession({
+          ...sessionUpdates,
+          history: [...session.history, userMessage, assistantMessage]
+        });
+        
+        // Check if current subtopic should be completed and trigger transition
+        if (session && session.subtopics.length > 0) {
+          const currentSubtopicIndex = session.currentSubtopicIndex;
+          const shouldComplete = checkSubtopicCompletion(currentSubtopicIndex);
+          
+          if (shouldComplete) {
+            // Mark for transition on next message
+            updateSession({ shouldTransition: true });
+            
+            // Update knowledge map status
+            updateTopicStatus(session.subtopics[currentSubtopicIndex].id, "green");
+          }
+        }
+        
+        // Handle subtopic transition if marked for transition
+        if (session && session.shouldTransition) {
+          const moved = moveToNextSubtopic();
+          if (moved) {
+            // Update knowledge map to show new current subtopic
+            setCurrentSubtopicIndex(session.currentSubtopicIndex + 1);
+          } else if (isSessionComplete()) {
+            // Session is complete - all subtopics finished
+            console.log("[Conversation] Session completed! All subtopics mastered.");
+          }
+        }
       }
     } catch (error) {
       console.error("Error in conversation:", error);
-      addMessage({
-        id: uuidv4(),
-        role: "assistant" as const,
-        content: "I apologize, but I encountered an error. Please try again.",
-      });
+      setError(
+        error instanceof Error 
+          ? `Failed to send message: ${error.message}` 
+          : "Failed to send message. Please check your connection and try again."
+      );
     } finally {
       setIsLoading(false);
     }
@@ -161,24 +267,6 @@ export function Conversation({ initialTopic, onInitialTopicUsed }: { initialTopi
     }
   }, [])
 
-  // Handle keyboard visibility
-  useEffect(() => {
-    const handleFocus = () => setIsKeyboardVisible(true)
-    const handleBlur = () => setIsKeyboardVisible(false)
-
-    if (inputRef.current) {
-      inputRef.current.addEventListener("focus", handleFocus)
-      inputRef.current.addEventListener("blur", handleBlur)
-    }
-
-    return () => {
-      if (inputRef.current) {
-        inputRef.current.removeEventListener("focus", handleFocus)
-        inputRef.current.removeEventListener("blur", handleBlur)
-      }
-    }
-  }, [inputRef.current])
-
   // Auto-resize textarea based on content
   const handleInput = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const textarea = e.target
@@ -205,8 +293,41 @@ export function Conversation({ initialTopic, onInitialTopicUsed }: { initialTopi
     console.log("[Conversation] Messages updated:", session?.history);
   }, [session?.history]);
 
+  // iOS keyboard handling
+  useEffect(() => {
+    const handleViewportChange = () => {
+      // Force scroll to bottom when keyboard appears/disappears on iOS
+      if (messagesEndRef.current) {
+    setTimeout(() => {
+          messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+        }, 100);
+      }
+    };
+
+    // Listen for viewport changes (keyboard show/hide)
+    window.addEventListener('resize', handleViewportChange);
+    window.addEventListener('orientationchange', handleViewportChange);
+
+    return () => {
+      window.removeEventListener('resize', handleViewportChange);
+      window.removeEventListener('orientationchange', handleViewportChange);
+    };
+  }, []);
+
+  // Retry function for failed requests
+  const retryLastAction = () => {
+    setError(null);
+    submitMessage(input);
+  };
+
   return (
     <div className="flex flex-col h-full bg-white">
+      {/* Completion celebration */}
+      <CompletionCelebration 
+        isVisible={showCelebration} 
+        onComplete={() => setShowCelebration(false)} 
+      />
+      
       {/* Sticky header for mobile */}
       {isMobile && (
         <div
@@ -265,6 +386,27 @@ export function Conversation({ initialTopic, onInitialTopicUsed }: { initialTopi
               </div>
             </div>
           )}
+          
+          {error && (
+            <div className="flex justify-center">
+              <div className="bg-red-50 border border-red-200 rounded-2xl px-4 md:px-5 py-3 md:py-4 max-w-md">
+                <div className="flex items-start space-x-3">
+                  <AlertCircle className="h-5 w-5 text-red-500 flex-shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <p className="text-sm text-red-800 mb-3">{error}</p>
+                    <button
+                      onClick={retryLastAction}
+                      className="inline-flex items-center gap-2 bg-red-500 text-white px-3 py-1.5 rounded-lg text-sm hover:bg-red-600 transition-colors"
+                    >
+                      <RefreshCw className="h-4 w-4" />
+                      Try Again
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+          
           <div ref={messagesEndRef} />
         </div>
       </div>
@@ -307,12 +449,22 @@ export function Conversation({ initialTopic, onInitialTopicUsed }: { initialTopi
               autoCorrect="on"
               spellCheck="true"
               enterKeyHint="send"
+              inputMode="text"
+              autoCapitalize="sentences"
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault()
                   if (input.trim() && !isLoading) {
                     handleSubmit(e)
                   }
+                }
+              }}
+              onFocus={() => {
+                // Scroll to bottom when keyboard appears on iOS
+                if (isMobile) {
+                  setTimeout(() => {
+                    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+                  }, 300);
                 }
               }}
             />

@@ -3,12 +3,15 @@
 import type React from "react"
 
 import { useState, useEffect, useRef } from "react"
+import { useSwipeable } from "react-swipeable"
 import { Sidebar } from "./features/sidebar/sidebar"
 import { SidebarProvider, useSidebarState } from "./features/sidebar/sidebar-context"
-import { KnowledgeMapProvider } from "./features/knowledge-map/knowledge-map-context"
+import { KnowledgeMapProvider, useKnowledgeMap } from "./features/knowledge-map/knowledge-map-context"
 import { KnowledgeMapPanel } from "./features/knowledge-map/knowledge-map-panel"
 import { Conversation } from "./features/conversation/conversation"
+import { ErrorBoundary } from "./ui/error-boundary"
 import { PenLine, GraduationCap, Code, Coffee, Sparkles, Plus, SendHorizonal, Telescope } from "lucide-react"
+import { useSession } from "./features/conversation/session-context"
 
 export default function CarsonUI() {
   // Add viewport meta tag for better mobile behavior
@@ -31,7 +34,9 @@ export default function CarsonUI() {
   return (
     <SidebarProvider>
       <KnowledgeMapProvider>
-        <CarsonUIContent />
+        <ErrorBoundary>
+          <CarsonUIContent />
+        </ErrorBoundary>
       </KnowledgeMapProvider>
     </SidebarProvider>
   )
@@ -45,8 +50,48 @@ function CarsonUIContent() {
   const [isTransitioning, setIsTransitioning] = useState(false)
   const [initialTopic, setInitialTopic] = useState<string | null>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
-  const { collapsed, isMobile } = useSidebarState()
+  const { collapsed, isMobile, setSidebarOpen, sidebarOpen } = useSidebarState()
+  const { isMapOpen, toggleMap, clearKnowledgeMap } = useKnowledgeMap()
+  const { clearSession } = useSession()
   const [contentWidth, setContentWidth] = useState("max-w-2xl")
+
+  // Swipe handlers for sidebar (left edge swipe)
+  const sidebarSwipeHandlers = useSwipeable({
+    onSwipedRight: () => {
+      if (isMobile && !sidebarOpen) {
+        setSidebarOpen(true)
+      }
+    },
+    onSwipedLeft: () => {
+      if (isMobile && sidebarOpen) {
+        setSidebarOpen(false)
+      }
+    },
+    trackMouse: false,
+    trackTouch: true,
+    delta: 50, // Minimum swipe distance
+    preventScrollOnSwipe: true,
+    touchEventOptions: { passive: false }
+  })
+
+  // Swipe handlers for knowledge map (right edge swipe)
+  const knowledgeMapSwipeHandlers = useSwipeable({
+    onSwipedLeft: () => {
+      if (isMobile && !isMapOpen && inConversation) {
+        toggleMap()
+      }
+    },
+    onSwipedRight: () => {
+      if (isMobile && isMapOpen && inConversation) {
+        toggleMap()
+      }
+    },
+    trackMouse: false,
+    trackTouch: true,
+    delta: 50,
+    preventScrollOnSwipe: true,
+    touchEventOptions: { passive: false }
+  })
 
   // Update content width when sidebar state changes
   useEffect(() => {
@@ -91,6 +136,15 @@ function CarsonUIContent() {
     setIsTransitioning(false)
     setIsLoading(false)
     setInitialTopic(null)
+    
+    // Clear session and knowledge map data
+    clearSession()
+    clearKnowledgeMap()
+    
+    // Close sidebar on mobile and tablets after new chat
+    if (isMobile) {
+      setSidebarOpen(false)
+    }
   }
 
   // Auto-resize textarea based on content
@@ -116,12 +170,31 @@ function CarsonUIContent() {
       {/* Only show knowledge map when in conversation */}
       {inConversation && <KnowledgeMapPanel />}
 
+      {/* Left edge swipe zone for sidebar */}
+      {isMobile && (
+        <div
+          {...sidebarSwipeHandlers}
+          className="fixed left-0 top-0 bottom-0 w-8 z-30 pointer-events-auto"
+          style={{ touchAction: 'pan-y' }}
+        />
+      )}
+
+      {/* Right edge swipe zone for knowledge map */}
+      {isMobile && inConversation && (
+        <div
+          {...knowledgeMapSwipeHandlers}
+          className="fixed right-0 top-0 bottom-0 w-8 z-30 pointer-events-auto"
+          style={{ touchAction: 'pan-y' }}
+        />
+      )}
+
       <div
         className={cn(
           "flex-1 flex flex-col transition-all duration-700 ease-in-out",
           getMainContentMargin(),
           isTransitioning && "opacity-20 scale-98 blur-sm",
         )}
+        {...(isMobile ? knowledgeMapSwipeHandlers : {})}
       >
         {inConversation ? (
           // Conversation mode
@@ -136,7 +209,7 @@ function CarsonUIContent() {
 
               <div className="w-full mb-8 md:mb-12">
                 <h2 className="text-[22px] md:text-[35px] font-normal text-gray-800 mb-6 md:mb-10 leading-tight mx-auto text-center">
-                  Hey, I'm Carson. I'll help you understand medicine like a kind senior would.
+                  I&apos;m Carson, I help you learn medicine with clarity and curiosity.
                 </h2>
 
                 <div className="mt-8 md:mt-12 w-full max-w-3xl mx-auto">
@@ -155,6 +228,20 @@ function CarsonUIContent() {
                         style={{ fontSize: "16px" }}
                         rows={1}
                         disabled={isLoading || isTransitioning}
+                        autoComplete="off"
+                        autoCorrect="on"
+                        spellCheck="true"
+                        enterKeyHint="send"
+                        inputMode="text"
+                        autoCapitalize="sentences"
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && !e.shiftKey) {
+                            e.preventDefault()
+                            if (query.trim() && !isLoading && !isTransitioning) {
+                              handleSubmit(e)
+                            }
+                          }
+                        }}
                       />
 
                       {/* Bottom toolbar */}
@@ -231,6 +318,7 @@ interface QuickActionButtonProps {
 }
 
 function QuickActionButton({ icon, label }: QuickActionButtonProps) {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { isMobile } = useSidebarState()
 
   return (

@@ -1,21 +1,14 @@
-import { CarsonSessionContext } from "./carsonTypes"
-import { generatePrompt } from "./promptEngine"
+import { CarsonSessionContext } from './carsonTypes';
 
-// TODO: Move to environment variables
-const API_KEY = process.env.NEXT_PUBLIC_OPENAI_API_KEY
-const API_URL = "https://api.openai.com/v1/chat/completions"
-
-interface LLMResponse {
-  content: string
-  subtopics?: Array<{
-    id: string
-    title: string
-    description: string
-  }>
+interface SubtopicResponse {
+  id: string;
+  title: string;
+  description?: string;
 }
 
-export async function callLLM(session: CarsonSessionContext): Promise<LLMResponse> {
-  console.log("[callLLM] Called with session:", session);
+// Mock LLM service - replace with actual LLM integration
+export async function callLLM(context: CarsonSessionContext): Promise<{ content: string; subtopics?: SubtopicResponse[] }> {
+  console.log("[callLLM] Called with session:", context);
   // Call the Next.js API route instead of OpenAI directly
   try {
     const response = await fetch("/api/llm", {
@@ -23,7 +16,7 @@ export async function callLLM(session: CarsonSessionContext): Promise<LLMRespons
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify(session),
+      body: JSON.stringify(context),
     })
 
     if (!response.ok) {
