@@ -2,9 +2,10 @@
 
 import type React from "react"
 import { Button } from "@/components/ui/button"
-import { BookOpen, Clock, FileText, Home, LogOut, Menu, Plus, Route, Settings, User, X } from "lucide-react"
+import { BookOpen, Clock, FileText, LogOut, Menu, MessageSquarePlus, Route, Settings, User, X, HelpCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useSidebarState } from "./sidebar-context"
+import { useRouter } from "next/navigation"
 
 interface SidebarProps {
   onNewChat?: () => void
@@ -12,6 +13,15 @@ interface SidebarProps {
 
 export function Sidebar({ onNewChat }: SidebarProps) {
   const { collapsed, setCollapsed, sidebarOpen, setSidebarOpen, isMobile } = useSidebarState()
+  const router = useRouter()
+
+  const handleNavigation = (path: string) => {
+    router.push(path)
+    // Close sidebar on mobile after navigation
+    if (isMobile) {
+      setSidebarOpen(false)
+    }
+  }
 
   return (
     <>
@@ -66,35 +76,121 @@ export function Sidebar({ onNewChat }: SidebarProps) {
               </Button>
             )}
           </div>
-          <Button
-            className={cn(
-              "bg-gray-800 hover:bg-gray-700 text-white gap-3 mb-6 w-full justify-start",
-              collapsed && !isMobile && "w-10 h-10 p-0 mx-auto justify-center",
+          <div className="mb-6">
+            {collapsed && !isMobile ? (
+              // Collapsed state - just icon button like other nav items
+              <Button
+                variant="ghost"
+                size="icon"
+                className="w-10 h-10 mx-auto text-gray-300 hover:text-white hover:bg-gray-800 transition-all duration-200"
+                onClick={() => {
+                  onNewChat?.()
+                  handleNavigation('/')
+                }}
+              >
+                <MessageSquarePlus size={16} />
+              </Button>
+            ) : (
+              // Expanded state - full gradient button
+              <div
+                className="relative group bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white rounded-xl shadow-lg hover:shadow-xl transition-all duration-200 overflow-hidden cursor-pointer"
+                onClick={() => {
+                  onNewChat?.()
+                  handleNavigation('/')
+                }}
+              >
+                <Button
+                  className="w-full h-full bg-transparent hover:bg-white/10 border-0 shadow-none text-white font-medium px-4 py-3 justify-start gap-3 transition-all duration-200"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onNewChat?.()
+                    handleNavigation('/')
+                  }}
+                >
+                  <MessageSquarePlus size={isMobile ? 20 : 18} className="flex-shrink-0" />
+                  <span className="text-[15px]">New conversation</span>
+                </Button>
+                
+                {/* Subtle shine effect */}
+                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent -skew-x-12 -translate-x-full group-hover:translate-x-full transition-transform duration-700 pointer-events-none"></div>
+              </div>
             )}
-            onClick={onNewChat}
-          >
-            <Plus size={isMobile ? 20 : 16} />
-            {(!collapsed || isMobile) && <span>New chat</span>}
-          </Button>
+          </div>
         </div>
 
         {/* Middle section with main navigation */}
         <div className="flex-1 overflow-auto px-4">
           <div className="space-y-3">
-            <NavItem icon={Home} label="Home" collapsed={collapsed} isMobile={isMobile} />
-            <NavItem icon={Clock} label="Recents" collapsed={collapsed} isMobile={isMobile} />
-            <NavItem icon={FileText} label="Journal" collapsed={collapsed} isMobile={isMobile} />
-            <NavItem icon={Route} label="Knowledge Journey" collapsed={collapsed} isMobile={isMobile} />
-            <NavItem icon={BookOpen} label="Explorations" collapsed={collapsed} isMobile={isMobile} />
+            <NavItem 
+              icon={Clock} 
+              label="Recents" 
+              collapsed={collapsed} 
+              isMobile={isMobile}
+              onClick={() => handleNavigation('/recents')} 
+            />
+            <NavItem 
+              icon={FileText} 
+              label="Journal" 
+              collapsed={collapsed} 
+              isMobile={isMobile}
+              onClick={() => handleNavigation('/journal')} 
+            />
+            <NavItem 
+              icon={Route} 
+              label="Knowledge Journey" 
+              collapsed={collapsed} 
+              isMobile={isMobile}
+              onClick={() => handleNavigation('/journey')} 
+            />
+            <div className="relative">
+              <NavItem 
+                icon={BookOpen} 
+                label="Explorations" 
+                collapsed={collapsed} 
+                isMobile={isMobile}
+                onClick={() => handleNavigation('/explorations')} 
+              />
+              
+              {/* Explorations submenu when expanded */}
+              {(!collapsed || isMobile) && (
+                <div className="ml-6 mt-2 space-y-2">
+                  <NavSubItem
+                    icon={HelpCircle}
+                    label="Past Questions"
+                    collapsed={collapsed}
+                    isMobile={isMobile}
+                    onClick={() => handleNavigation('/question-solver')}
+                  />
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
         {/* Bottom section with settings and profile */}
         <div className="border-t border-gray-800 p-4">
           <div className="space-y-3">
-            <NavItem icon={Settings} label="Settings" collapsed={collapsed} isMobile={isMobile} />
-            <NavItem icon={User} label="Profile" collapsed={collapsed} isMobile={isMobile} />
-            <NavItem icon={LogOut} label="Logout" collapsed={collapsed} isMobile={isMobile} />
+            <NavItem 
+              icon={Settings} 
+              label="Settings" 
+              collapsed={collapsed} 
+              isMobile={isMobile}
+              onClick={() => handleNavigation('/settings')} 
+            />
+            <NavItem 
+              icon={User} 
+              label="Profile" 
+              collapsed={collapsed} 
+              isMobile={isMobile}
+              onClick={() => handleNavigation('/profile')} 
+            />
+            <NavItem 
+              icon={LogOut} 
+              label="Logout" 
+              collapsed={collapsed} 
+              isMobile={isMobile}
+              onClick={() => {}} 
+            />
           </div>
         </div>
       </div>
@@ -108,9 +204,10 @@ interface NavItemProps {
   collapsed: boolean
   isMobile: boolean
   active?: boolean
+  onClick?: () => void
 }
 
-function NavItem({ icon: Icon, label, collapsed, isMobile, active }: NavItemProps) {
+function NavItem({ icon: Icon, label, collapsed, isMobile, active, onClick }: NavItemProps) {
   return (
     <Button
       variant="ghost"
@@ -119,9 +216,37 @@ function NavItem({ icon: Icon, label, collapsed, isMobile, active }: NavItemProp
         active && "bg-gray-800 text-white",
         collapsed && !isMobile ? "w-10 h-10 p-0 mx-auto justify-center" : "w-full justify-start gap-3 py-3",
       )}
+      onClick={onClick}
     >
       <Icon size={isMobile ? 22 : 16} />
       {(!collapsed || isMobile) && <span className="text-base">{label}</span>}
+    </Button>
+  )
+}
+
+interface NavSubItemProps {
+  icon: React.ElementType
+  label: string
+  collapsed: boolean
+  isMobile: boolean
+  active?: boolean
+  onClick?: () => void
+}
+
+function NavSubItem({ icon: Icon, label, collapsed, isMobile, active, onClick }: NavSubItemProps) {
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      className={cn(
+        "text-gray-400 hover:text-white hover:bg-gray-800 text-sm",
+        active && "bg-gray-800 text-white",
+        "w-full justify-start gap-2 py-2 px-3",
+      )}
+      onClick={onClick}
+    >
+      <Icon size={14} />
+      <span>{label}</span>
     </Button>
   )
 }

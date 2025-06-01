@@ -6,19 +6,70 @@ import { useState, useRef, useEffect } from "react"
 import { useKnowledgeMap } from "../knowledge-map/knowledge-map-context"
 import { useSession } from "./session-context"
 import { cn } from "@/lib/utils"
-import { Plus, Paperclip, ArrowUp, AlertCircle, RefreshCw } from "lucide-react"
+import { Plus, Paperclip, ArrowUp, AlertCircle, RefreshCw, Mic, MicOff, Camera, FileText, Image } from "lucide-react"
 import { useSidebarState } from "../sidebar/sidebar-context"
 import { callLLM } from "@/lib/prompts/llm-service"
 import { CarsonSessionContext } from "@/lib/prompts/carsonTypes"
 import { v4 as uuidv4 } from 'uuid';
-import { assessUserResponse, updateSessionAfterAssessment } from "@/lib/prompts/assessmentEngine";
+import { assessUserResponse, AssessmentResult, ResponseType, updateSessionAfterAssessment } from "@/lib/prompts/assessmentEngine";
 import { CompletionCelebration } from "../knowledge-map/knowledge-map-animations";
+
+// Simple markdown processor for Carson's responses
+const processMarkdown = (text: string): React.ReactNode[] => {
+  return text.split('\n').map((line, index) => {
+    let processedLine = line;
+    
+    // Process headers
+    if (line.startsWith('### ')) {
+      processedLine = line.replace(/### (.*)/, '<strong>$1</strong>');
+    } else if (line.startsWith('## ')) {
+      processedLine = line.replace(/## (.*)/, '<strong>$1</strong>');
+    } else if (line.startsWith('# ')) {
+      processedLine = line.replace(/# (.*)/, '<strong>$1</strong>');
+    }
+    
+    // Process emphasis
+    processedLine = processedLine.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+    processedLine = processedLine.replace(/\*(.*?)\*/g, '<em>$1</em>');
+    
+    return (
+      <span key={index}>
+        {processedLine.includes('<') ? (
+          <span dangerouslySetInnerHTML={{ __html: processedLine }} />
+        ) : (
+          processedLine
+        )}
+        {index < text.split('\n').length - 1 && <br />}
+      </span>
+    );
+  });
+};
+
+// Simple topic extraction as fallback
+const extractTopicFromInput = (input: string): string => {
+  // Common patterns for topic extraction
+  const patterns = [
+    /(?:test|learn|understand|know|study)\s+(?:about|on|more about)\s+(.+?)(?:\?|$|\.)/i,
+    /(?:what is|explain|tell me about)\s+(.+?)(?:\?|$|\.)/i,
+    /(?:help me with|teach me)\s+(.+?)(?:\?|$|\.)/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = input.match(pattern);
+    if (match && match[1]) {
+      return match[1].trim();
+    }
+  }
+
+  // If no pattern matches, return the original input
+  return input;
+};
 
 // Accept initialTopic and onInitialTopicUsed as props
 export function Conversation({ initialTopic, onInitialTopicUsed }: { initialTopic?: string | null, onInitialTopicUsed?: () => void }) {
   console.log("[Conversation] Component rendered");
   const [input, setInput] = useState("")
-  const { updateTopicStatus, updateTopicProgress, setTopics, setCurrentTopicName, isLoading, setIsLoading, setCurrentSubtopicIndex } = useKnowledgeMap()
+  const { updateTopicStatus, updateTopicProgress, setTopics, setCurrentTopicName, setIsLoading: setKnowledgeMapLoading, setCurrentSubtopicIndex, topics } = useKnowledgeMap()
   const { session, startSession, addMessage, updateSession, moveToNextSubtopic, checkSubtopicCompletion, isSessionComplete } = useSession()
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
@@ -30,13 +81,131 @@ export function Conversation({ initialTopic, onInitialTopicUsed }: { initialTopi
   const [lastCarsonQuestion, setLastCarsonQuestion] = useState<string>("");
   const [showCelebration, setShowCelebration] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isConversationLoading, setIsConversationLoading] = useState(false); // Separate loading state for conversation
+  
+  // Voice-to-text state (Whisper-based)
+  const [isRecording, setIsRecording] = useState(false);
+  const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
+  const [audioChunks, setAudioChunks] = useState<Blob[]>([]);
+  const [isTranscribing, setIsTranscribing] = useState(false);
+
+  // Attachment modal state
+  const [showAttachmentModal, setShowAttachmentModal] = useState(false);
+
+  // Initialize audio recording only when user clicks microphone
+  const initializeRecording = async () => {
+    if (mediaRecorder) return; // Already initialized
+    
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream, {
+        mimeType: 'audio/webm;codecs=opus' // Good compression, supported by OpenAI
+      });
+      
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          setAudioChunks(prev => [...prev, event.data]);
+        }
+      };
+
+      recorder.onstop = async () => {
+        setIsRecording(false);
+        // Will handle transcription in the toggle function
+      };
+
+      setMediaRecorder(recorder);
+      return true; // Success
+    } catch (error) {
+      console.error('Error accessing microphone:', error);
+      return false; // Failed
+    }
+  };
+
+  // Cleanup function for when component unmounts
+  useEffect(() => {
+    return () => {
+      if (mediaRecorder && mediaRecorder.stream) {
+        mediaRecorder.stream.getTracks().forEach(track => track.stop());
+      }
+    };
+  }, [mediaRecorder]);
+
+  // Handle voice recording toggle
+  const toggleVoiceRecording = async () => {
+    // Initialize microphone if not already done
+    if (!mediaRecorder) {
+      const success = await initializeRecording();
+      if (!success) {
+        // Show user-friendly error message
+        setError("Unable to access microphone. Please check your browser permissions.");
+        return;
+      }
+    }
+
+    if (!mediaRecorder) return;
+
+    if (isRecording) {
+      // Stop recording and transcribe
+      mediaRecorder.stop();
+      setIsTranscribing(true);
+      
+      // Create audio blob from chunks
+      const audioBlob = new Blob(audioChunks, { type: 'audio/webm;codecs=opus' });
+      setAudioChunks([]); // Clear chunks for next recording
+      
+      try {
+        // Send to our transcription API
+        const formData = new FormData();
+        formData.append('audio', audioBlob, 'recording.webm');
+        
+        const response = await fetch('/api/transcribe', {
+          method: 'POST',
+          body: formData,
+        });
+        
+        if (response.ok) {
+          const { transcript } = await response.json();
+          setInput(prevInput => prevInput + (prevInput ? ' ' : '') + transcript);
+          
+          // Auto-resize textarea after adding voice input - call immediately and with slight delay
+          if (inputRef.current) {
+            resizeTextarea(inputRef.current);
+          }
+          setTimeout(() => {
+            if (inputRef.current) {
+              resizeTextarea(inputRef.current);
+            }
+          }, 10);
+        } else {
+          console.error('Transcription failed:', response.statusText);
+        }
+      } catch (error) {
+        console.error('Error during transcription:', error);
+      } finally {
+        setIsTranscribing(false);
+      }
+    } else {
+      // Start recording
+      setAudioChunks([]);
+      mediaRecorder.start(100); // Collect data every 100ms
+      setIsRecording(true);
+    }
+  };
+
+  // Auto-resize textarea based on content
+  const resizeTextarea = (textarea: HTMLTextAreaElement) => {
+    // Reset height to auto to get the correct scrollHeight
+    textarea.style.height = "auto"
+    // Set the height to scrollHeight to fit the content
+    textarea.style.height = `${Math.min(textarea.scrollHeight, isMobile ? 100 : 120)}px`
+  };
 
   // Extracted message submission logic
   const submitMessage = async (messageContent: string) => {
-    if (!messageContent.trim() || isLoading) return;
+    if (!messageContent.trim() || isConversationLoading) return;
 
     setInput("");
-    setIsLoading(true);
+    setIsConversationLoading(true);
     setError(null); // Clear any existing errors
 
     if (isMobile) {
@@ -49,9 +218,13 @@ export function Conversation({ initialTopic, onInitialTopicUsed }: { initialTopi
         const newSessionId = uuidv4();
         startSession(messageContent, newSessionId);
         setCurrentTopicName(messageContent);
+        
+        // Show knowledge map loading only for initial subtopic generation
+        setKnowledgeMapLoading(true);
 
         const userMessage = { id: uuidv4(), role: "user" as const, content: messageContent };
-        // Don't add message optimistically here - wait for successful response
+        // Add user message immediately to show in conversation
+        addMessage(userMessage);
 
         const response = await callLLM({
           sessionId: newSessionId,
@@ -65,6 +238,10 @@ export function Conversation({ initialTopic, onInitialTopicUsed }: { initialTopi
           currentSubtopicState: 'assessing',
           shouldTransition: false,
         });
+
+        // Use clean topic name from LLM response, fallback to regex extraction, or use original input
+        const finalTopicName = response.cleanTopic || extractTopicFromInput(messageContent) || messageContent;
+        setCurrentTopicName(finalTopicName);
 
         const assistantMessage = { id: uuidv4(), role: "assistant" as const, content: response.content };
         setLastCarsonQuestion(response.content); // Store Carson's question for assessment
@@ -95,49 +272,56 @@ export function Conversation({ initialTopic, onInitialTopicUsed }: { initialTopi
         }
 
         updateSession(sessionUpdate);
+        
+        // Stop knowledge map loading after subtopics are generated
+        setKnowledgeMapLoading(false);
       } else {
         // Ongoing conversation - assess user response and update session
         const userMessage = { id: uuidv4(), role: "user" as const, content: messageContent };
-        // Don't add message optimistically here - wait for successful response
+        
+        // Add user message immediately to show in conversation
+        addMessage(userMessage);
 
         // Assess the user's response if we have subtopics and a previous question
         let sessionUpdates: Partial<CarsonSessionContext> = {};
         let assessmentResult = null;
         
         if (session.subtopics.length > 0 && lastCarsonQuestion) {
-          assessmentResult = assessUserResponse(messageContent, session);
-          sessionUpdates = updateSessionAfterAssessment(session, assessmentResult);
+          assessmentResult = await assessUserResponse(messageContent, session);
           
-          console.log("[Conversation] Assessment result:", assessmentResult);
-          
-          // Update knowledge map progress and status based on assessment
-          const currentSubtopic = session.subtopics[session.currentSubtopicIndex];
-          if (currentSubtopic) {
-            // Update progress tracking
-            updateTopicProgress(currentSubtopic.id, {
-              questionsAnswered: (sessionUpdates.questionsAskedInCurrentSubtopic ?? session.questionsAskedInCurrentSubtopic) + 1,
-              totalQuestions: 3, // Assuming 3 questions per subtopic
-              currentQuestionType: sessionUpdates.currentQuestionType ?? session.currentQuestionType
-            });
+          // Only update session if we got an actual assessment (not null for conversational responses)
+          if (assessmentResult) {
+            sessionUpdates = updateSessionAfterAssessment(session, assessmentResult);
             
-            // Update status based on assessment
-            switch (assessmentResult.answerQuality) {
-              case 'excellent':
-              case 'good':
-                updateTopicStatus(currentSubtopic.id, "green");
-                // Show celebration for excellent performance
-                if (assessmentResult.answerQuality === 'excellent') {
-                  setShowCelebration(true);
-                }
-                break;
-              case 'partial':
-                updateTopicStatus(currentSubtopic.id, "yellow");
-                break;
-              case 'incorrect':
-              case 'confused':
-                updateTopicStatus(currentSubtopic.id, "red");
-                break;
+            console.log("[Conversation] Assessment result:", assessmentResult);
+            
+            // Update knowledge map progress and status based on assessment
+            const currentSubtopic = session.subtopics[session.currentSubtopicIndex];
+            if (currentSubtopic) {
+              // Update progress tracking
+              updateTopicProgress(currentSubtopic.id, {
+                questionsAnswered: (sessionUpdates.questionsAskedInCurrentSubtopic ?? session.questionsAskedInCurrentSubtopic) + 1,
+                totalQuestions: 3, // Assuming 3 questions per subtopic
+                currentQuestionType: sessionUpdates.currentQuestionType ?? session.currentQuestionType
+              });
+              
+              // Update status based on assessment - but delay celebration until after API call
+              switch (assessmentResult.answerQuality) {
+                case 'excellent':
+                case 'good':
+                  updateTopicStatus(currentSubtopic.id, "green");
+                  break;
+                case 'partial':
+                  updateTopicStatus(currentSubtopic.id, "yellow");
+                  break;
+                case 'incorrect':
+                case 'confused':
+                  updateTopicStatus(currentSubtopic.id, "red");
+                  break;
+              }
             }
+          } else {
+            console.log("[Conversation] No assessment - conversational response detected");
           }
         }
 
@@ -149,13 +333,17 @@ export function Conversation({ initialTopic, onInitialTopicUsed }: { initialTopi
           lastAssessment: assessmentResult ? {
             answerQuality: assessmentResult.answerQuality,
             nextAction: assessmentResult.nextAction,
-            reasoning: assessmentResult.reasoning
+            reasoning: assessmentResult.reasoning,
+            isStruggling: assessmentResult.isStruggling
           } : undefined
         };
 
         // Only generate subtopics if they haven't been generated yet
         let response;
         if (!session.subtopics || session.subtopics.length === 0) {
+          // Show knowledge map loading only if we're actually generating subtopics
+          setKnowledgeMapLoading(true);
+          
           response = await callLLM({
             ...updatedSession,
             subtopics: [],
@@ -170,8 +358,11 @@ export function Conversation({ initialTopic, onInitialTopicUsed }: { initialTopi
               }))
             );
           }
+          
+          // Stop knowledge map loading after subtopics are generated
+          setKnowledgeMapLoading(false);
         } else {
-          // Socratic Q&A with assessment-driven responses
+          // Socratic Q&A with assessment-driven responses - no knowledge map loading needed
           response = await callLLM(updatedSession);
         }
 
@@ -183,6 +374,12 @@ export function Conversation({ initialTopic, onInitialTopicUsed }: { initialTopi
           ...sessionUpdates,
           history: [...session.history, userMessage, assistantMessage]
         });
+        
+        // NOW trigger celebration after successful API call and session update
+        if (assessmentResult && assessmentResult.answerQuality === 'excellent') {
+          // Small delay to ensure all state updates have settled
+          setTimeout(() => setShowCelebration(true), 100);
+        }
         
         // Check if current subtopic should be completed and trigger transition
         if (session && session.subtopics.length > 0) {
@@ -218,9 +415,26 @@ export function Conversation({ initialTopic, onInitialTopicUsed }: { initialTopi
           : "Failed to send message. Please check your connection and try again."
       );
     } finally {
-      setIsLoading(false);
+      setIsConversationLoading(false);
     }
   };
+
+  // Sync knowledge map with session subtopics - only on initial load
+  useEffect(() => {
+    if (session?.subtopics && session.subtopics.length > 0 && topics.length === 0) {
+      // Only sync if knowledge map is empty (initial load)
+      setTopics(
+        session.subtopics.map((sub) => ({
+          id: sub.id,
+          name: sub.title,
+          status: sub.status === "gap" ? "red" : 
+                  sub.status === "shaky" ? "yellow" : 
+                  sub.status === "understood" ? "green" : "unassessed",
+        }))
+      );
+      setCurrentSubtopicIndex(session.currentSubtopicIndex);
+    }
+  }, [session?.subtopics, topics.length, setTopics, setCurrentSubtopicIndex]);
 
   // Auto-scroll to bottom of messages
   useEffect(() => {
@@ -234,14 +448,14 @@ export function Conversation({ initialTopic, onInitialTopicUsed }: { initialTopi
       initialTopicSubmitted,
       hasSubmittedInitialTopic: hasSubmittedInitialTopic.current,
       messagesLength: session?.history?.length,
-      isLoading,
+      isConversationLoading,
       session,
     });
     if (
       initialTopic &&
       !hasSubmittedInitialTopic.current &&
       !session && // Only if no session exists yet
-      !isLoading
+      !isConversationLoading
     ) {
       hasSubmittedInitialTopic.current = true;
       setInitialTopicSubmitted(true);
@@ -250,7 +464,7 @@ export function Conversation({ initialTopic, onInitialTopicUsed }: { initialTopi
       if (onInitialTopicUsed) onInitialTopicUsed();
     }
     // eslint-disable-next-line
-  }, [initialTopic, isLoading, session, initialTopicSubmitted]);
+  }, [initialTopic, isConversationLoading, session, initialTopicSubmitted]);
 
   // Handle scroll detection for sticky header
   useEffect(() => {
@@ -271,11 +485,7 @@ export function Conversation({ initialTopic, onInitialTopicUsed }: { initialTopi
   const handleInput = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const textarea = e.target
     setInput(textarea.value)
-
-    // Reset height to auto to get the correct scrollHeight
-    textarea.style.height = "auto"
-    // Set the height to scrollHeight to fit the content
-    textarea.style.height = `${Math.min(textarea.scrollHeight, isMobile ? 100 : 120)}px`
+    resizeTextarea(textarea);
   }
 
   // Focus the input field when clicking anywhere in the input container
@@ -320,6 +530,13 @@ export function Conversation({ initialTopic, onInitialTopicUsed }: { initialTopi
     submitMessage(input);
   };
 
+  // Handle attachment option selection
+  const handleAttachmentOption = (option: 'file' | 'camera' | 'photos') => {
+    setShowAttachmentModal(false);
+    // TODO: Implement attachment handling
+    console.log(`Selected attachment option: ${option}`);
+  };
+
   return (
     <div className="flex flex-col h-full bg-white">
       {/* Completion celebration */}
@@ -341,7 +558,7 @@ export function Conversation({ initialTopic, onInitialTopicUsed }: { initialTopi
       {/* Messages container - with scroll detection */}
       <div
         ref={scrollContainerRef}
-        className={cn("flex-1 overflow-y-auto pt-16 md:pt-20 pb-4 md:pb-6", isMobile ? "px-[5px]" : "px-4")}
+        className={cn("flex-1 overflow-y-auto pt-16 md:pt-20 pb-4 md:pb-6 bg-gray-50", isMobile ? "px-[5px]" : "px-4")}
         data-conversation-scroll
       >
         <div className="max-w-4xl mx-auto space-y-4 md:space-y-6">
@@ -352,34 +569,35 @@ export function Conversation({ initialTopic, onInitialTopicUsed }: { initialTopi
             >
               <div
                 className={cn(
-                  "px-4 md:px-5 py-2.5 md:py-3 rounded-2xl",
+                  "px-4 md:px-6 py-3 md:py-4 break-words",
                   message.role === "assistant"
-                    ? "bg-gray-100 text-gray-800 max-w-full md:max-w-3xl"
-                    : "bg-blue-500 text-white max-w-[80%] sm:max-w-[75%] md:max-w-[65%] lg:max-w-[60%] min-w-0",
-                  message.role === "user" && "rounded-br-none",
-                  message.role === "assistant" && "rounded-bl-none",
+                    ? "bg-white text-gray-800 max-w-full md:max-w-3xl border border-gray-200 rounded-xl sm:rounded-2xl rounded-bl-md shadow-sm"
+                    : "bg-blue-600 text-white max-w-[75%] sm:max-w-[70%] md:max-w-[65%] rounded-3xl rounded-br-lg"
                 )}
               >
-                <div className="whitespace-pre-line leading-relaxed text-sm md:text-base break-words overflow-wrap-anywhere">
-                  {message.content}
+                <div className="text-sm md:text-base leading-relaxed whitespace-pre-line overflow-wrap-anywhere">
+                  {typeof message.content === 'string' ? 
+                    processMarkdown(message.content)
+                    : JSON.stringify(message.content)
+                  }
                 </div>
               </div>
             </div>
           ))}
-          {isLoading && (
+          {isConversationLoading && (
             <div className="flex justify-start">
-              <div className="bg-gray-100 text-gray-800 rounded-2xl rounded-bl-none px-4 md:px-5 py-2.5 md:py-3">
+              <div className="bg-white text-gray-800 rounded-xl sm:rounded-2xl rounded-bl-md px-4 md:px-6 py-3 md:py-4 shadow-sm border border-gray-200">
                 <div className="flex space-x-2 items-center h-6">
                   <div
-                    className="w-2 h-2 rounded-full bg-gray-400 animate-bounce"
+                    className="w-2 h-2 rounded-full bg-blue-400 animate-bounce"
                     style={{ animationDelay: "0ms" }}
                   ></div>
                   <div
-                    className="w-2 h-2 rounded-full bg-gray-400 animate-bounce"
+                    className="w-2 h-2 rounded-full bg-blue-400 animate-bounce"
                     style={{ animationDelay: "150ms" }}
                   ></div>
                   <div
-                    className="w-2 h-2 rounded-full bg-gray-400 animate-bounce"
+                    className="w-2 h-2 rounded-full bg-blue-400 animate-bounce"
                     style={{ animationDelay: "300ms" }}
                   ></div>
                 </div>
@@ -389,14 +607,14 @@ export function Conversation({ initialTopic, onInitialTopicUsed }: { initialTopi
           
           {error && (
             <div className="flex justify-center">
-              <div className="bg-red-50 border border-red-200 rounded-2xl px-4 md:px-5 py-3 md:py-4 max-w-md">
+              <div className="bg-red-50 border border-red-200 rounded-xl sm:rounded-2xl px-4 md:px-6 py-4 md:py-5 max-w-md shadow-sm">
                 <div className="flex items-start space-x-3">
                   <AlertCircle className="h-5 w-5 text-red-500 flex-shrink-0 mt-0.5" />
                   <div className="flex-1">
                     <p className="text-sm text-red-800 mb-3">{error}</p>
                     <button
                       onClick={retryLastAction}
-                      className="inline-flex items-center gap-2 bg-red-500 text-white px-3 py-1.5 rounded-lg text-sm hover:bg-red-600 transition-colors"
+                      className="inline-flex items-center gap-2 bg-red-500 text-white px-4 py-2 rounded-lg text-sm hover:bg-red-600 transition-colors shadow-sm"
                     >
                       <RefreshCw className="h-4 w-4" />
                       Try Again
@@ -412,26 +630,54 @@ export function Conversation({ initialTopic, onInitialTopicUsed }: { initialTopi
       </div>
 
       {/* Responsive input form - improved mobile behavior */}
-      <div className={cn("border-t border-gray-200 bg-gray-50", isMobile ? "p-3 px-[5px]" : "p-4")}>
+      <div className={cn("border-t border-gray-200 bg-gray-50", isMobile ? "p-4 px-[5px]" : "p-6")}>
         <form onSubmit={handleSubmit} className="max-w-4xl mx-auto">
           <div
-            className="relative flex items-end bg-white border border-gray-300 rounded-xl md:rounded-2xl shadow-sm hover:border-gray-400 focus-within:border-blue-400 focus-within:ring-1 focus-within:ring-blue-200 transition-all duration-200"
+            className="relative flex items-end bg-white border border-gray-200 rounded-xl md:rounded-2xl shadow-sm hover:border-gray-300 focus-within:border-blue-400 focus-within:ring-1 focus-within:ring-blue-200 transition-all duration-200"
             onClick={handleContainerClick}
           >
             {/* Left side icons - responsive */}
-            <div className="flex items-center pl-3 md:pl-4 pb-2 md:pb-3">
+            <div className="flex items-center pl-3 md:pl-4 pb-3 md:pb-4 relative">
               <button
                 type="button"
-                className="p-1.5 md:p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors mr-1"
+                onClick={() => setShowAttachmentModal(!showAttachmentModal)}
+                className="p-2 md:p-2.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
               >
                 <Plus size={isMobile ? 18 : 20} />
               </button>
-              <button
-                type="button"
-                className="p-1.5 md:p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
-              >
-                <Paperclip size={isMobile ? 18 : 20} />
-              </button>
+
+              {/* Attachment options dropdown */}
+              {showAttachmentModal && (
+                <div className="absolute bottom-full left-0 mb-2 bg-white rounded-xl sm:rounded-2xl shadow-xl border border-gray-200 p-3 z-50 min-w-[200px] drop-shadow-lg">
+                  <button
+                    onClick={() => handleAttachmentOption('file')}
+                    className="w-full flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 transition-colors text-left"
+                  >
+                    <div className="p-2 bg-blue-100 rounded-lg">
+                      <FileText size={18} className="text-blue-600" />
+                    </div>
+                    <span className="text-sm font-medium text-gray-800">File</span>
+                  </button>
+                  <button
+                    onClick={() => handleAttachmentOption('camera')}
+                    className="w-full flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 transition-colors text-left"
+                  >
+                    <div className="p-2 bg-green-100 rounded-lg">
+                      <Camera size={18} className="text-green-600" />
+                    </div>
+                    <span className="text-sm font-medium text-gray-800">Camera</span>
+                  </button>
+                  <button
+                    onClick={() => handleAttachmentOption('photos')}
+                    className="w-full flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 transition-colors text-left"
+                  >
+                    <div className="p-2 bg-purple-100 rounded-lg">
+                      <Image size={18} className="text-purple-600" />
+                    </div>
+                    <span className="text-sm font-medium text-gray-800">Photos</span>
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Textarea input - improved mobile behavior */}
@@ -441,10 +687,10 @@ export function Conversation({ initialTopic, onInitialTopicUsed }: { initialTopi
               onChange={handleInput}
               placeholder="Reply to Carson..."
               name="carson-message"
-              className="flex-1 max-h-[100px] md:max-h-[200px] py-3 md:py-4 px-2 bg-transparent border-0 focus:ring-0 focus:outline-none resize-none text-base placeholder-gray-500"
+              className="flex-1 max-h-[100px] md:max-h-[200px] py-4 md:py-5 px-2 bg-transparent border-0 focus:ring-0 focus:outline-none resize-none text-base placeholder-gray-500"
               style={{ fontSize: "16px" }} // Prevents zoom on iOS Safari
               rows={1}
-              disabled={isLoading}
+              disabled={isConversationLoading}
               autoComplete="off"
               autoCorrect="on"
               spellCheck="true"
@@ -454,7 +700,7 @@ export function Conversation({ initialTopic, onInitialTopicUsed }: { initialTopi
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault()
-                  if (input.trim() && !isLoading) {
+                  if (input.trim() && !isConversationLoading) {
                     handleSubmit(e)
                   }
                 }
@@ -469,24 +715,53 @@ export function Conversation({ initialTopic, onInitialTopicUsed }: { initialTopi
               }}
             />
 
-            {/* Right side - send button - responsive */}
-            <div className="flex items-center pr-2 md:pr-3 pb-2 md:pb-3">
-              <button
-                type="submit"
-                disabled={!input.trim() || isLoading}
-                className={cn(
-                  "p-1.5 md:p-2 rounded-lg transition-all duration-200",
-                  input.trim() && !isLoading
-                    ? "bg-blue-500 text-white hover:bg-blue-600"
-                    : "bg-gray-200 text-gray-400 cursor-not-allowed",
-                )}
-              >
-                {isLoading ? (
-                  <div className="h-4 w-4 md:h-5 md:w-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                ) : (
-                  <ArrowUp size={isMobile ? 18 : 20} />
-                )}
-              </button>
+            {/* Right side - single button that switches between mic and send */}
+            <div className="flex items-center pr-3 md:pr-4 pb-3 md:pb-4">
+              {input.trim() ? (
+                // Send button when there's text
+                <button
+                  type="submit"
+                  disabled={isConversationLoading}
+                  className="p-2 md:p-2.5 rounded-xl bg-blue-600 text-white hover:bg-blue-700 transition-all duration-200 shadow-sm"
+                >
+                  {isConversationLoading ? (
+                    <div className="h-5 w-5 md:h-6 md:w-6 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  ) : (
+                    <ArrowUp size={isMobile ? 18 : 20} />
+                  )}
+                </button>
+              ) : (
+                // Microphone button when input is empty
+                <button
+                  type="button"
+                  onClick={toggleVoiceRecording}
+                  disabled={isConversationLoading || isTranscribing}
+                  className={cn(
+                    "p-2 md:p-2.5 rounded-lg transition-all duration-200",
+                    isRecording
+                      ? "bg-red-500 text-white hover:bg-red-600"
+                      : isTranscribing
+                      ? "bg-blue-500 text-white"
+                      : "text-gray-500 hover:text-blue-600 hover:bg-blue-50",
+                    (isConversationLoading || isTranscribing) && "cursor-not-allowed opacity-50"
+                  )}
+                  title={
+                    isTranscribing 
+                      ? "Transcribing..." 
+                      : isRecording 
+                      ? "Stop recording" 
+                      : "Start voice input"
+                  }
+                >
+                  {isTranscribing ? (
+                    <div className="h-4 w-4 md:h-5 md:w-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  ) : isRecording ? (
+                    <MicOff size={isMobile ? 18 : 20} />
+                  ) : (
+                    <Mic size={isMobile ? 18 : 20} />
+                  )}
+                </button>
+              )}
             </div>
           </div>
         </form>

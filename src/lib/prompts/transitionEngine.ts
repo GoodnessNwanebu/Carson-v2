@@ -43,13 +43,21 @@ function randomSelect<T>(array: T[]): T {
 }
 
 function assessUserPerformance(subtopic: Subtopic): 'excellent' | 'good' | 'struggled' {
+  // If student needed explanations, they struggled
   if (subtopic.needsExplanation) {
     return 'struggled';
   }
-  if (subtopic.correctAnswers >= 3 && subtopic.questionsAsked <= 3) {
+  
+  // Check if they answered most questions correctly and efficiently
+  const successRate = subtopic.questionsAsked > 0 ? subtopic.correctAnswers / subtopic.questionsAsked : 0;
+  
+  if (successRate >= 0.8 && subtopic.questionsAsked <= 3) {
     return 'excellent';
+  } else if (successRate >= 0.6) {
+    return 'good';
+  } else {
+    return 'struggled';
   }
-  return 'good';
 }
 
 export function generateTransition(context: TransitionContext): string {

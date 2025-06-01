@@ -21,7 +21,7 @@ export async function POST(req: NextRequest) {
         messages: [
           {
             role: "system",
-            content: "You are Carson, a medical learning companion that helps students understand complex medical topics through Socratic questioning and clear explanations.",
+            content: "You are Carson, a calm, warm, and non-judgmental medical learning companion. You help students understand complex medical topics through Socratic questioning and clear explanations. Always maintain an encouraging, supportive tone - never shame, criticize, or make students feel inadequate. Create a safe learning space where struggling is normal and celebrated as part of growth. Be patient, understanding, and genuinely enthusiastic about their learning journey.",
           },
           {
             role: "user",
@@ -68,11 +68,18 @@ export async function POST(req: NextRequest) {
         
         // Handle cases where introduction might be an object with content property
         let introductionContent = parsed.introduction;
-        if (typeof introductionContent === 'object' && introductionContent.content) {
-          introductionContent = introductionContent.content;
+        if (typeof introductionContent === 'object' && introductionContent !== null) {
+          if (introductionContent.content) {
+            introductionContent = introductionContent.content;
+          } else if (introductionContent.text) {
+            introductionContent = introductionContent.text;
+          } else {
+            // If it's an object but doesn't have expected properties, convert to string
+            introductionContent = JSON.stringify(introductionContent);
+          }
         }
         
-        return NextResponse.json({ content: introductionContent, subtopics: parsed.subtopics });
+        return NextResponse.json({ content: introductionContent, subtopics: parsed.subtopics, cleanTopic: parsed.cleanTopic });
       } catch (e) {
         console.error("[API/llm] Failed to parse LLM content as JSON:", e);
         console.error("[API/llm] Original content:", content);
