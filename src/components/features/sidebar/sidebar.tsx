@@ -106,13 +106,13 @@ export function Sidebar({ onNewChat }: SidebarProps) {
                     onNewChat?.()
                     handleNavigation('/')
                   }}
-                >
-                  <MessageSquarePlus size={isMobile ? 20 : 18} className="flex-shrink-0" />
-                  <span className="text-[15px]">New conversation</span>
-                </Button>
-                
+              >
+                <MessageSquarePlus size={isMobile ? 20 : 18} className="flex-shrink-0" />
+                <span className="text-[15px]">New conversation</span>
+              </Button>
+            
                 {/* Subtle shine effect */}
-                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent -skew-x-12 -translate-x-full group-hover:translate-x-full transition-transform duration-700 pointer-events-none"></div>
+              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent -skew-x-12 -translate-x-full group-hover:translate-x-full transition-transform duration-700 pointer-events-none"></div>
               </div>
             )}
           </div>
