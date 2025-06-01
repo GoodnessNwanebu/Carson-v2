@@ -16,18 +16,34 @@ import { cn } from "@/lib/utils"
 export default function CarsonUI() {
   // Add viewport meta tag for better mobile behavior
   useEffect(() => {
-    // Add viewport meta tag to prevent scaling
+    // Add viewport meta tag to prevent scaling and improve mobile rendering
     const meta = document.createElement("meta")
     meta.name = "viewport"
-    meta.content = "width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
+    meta.content = "width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content"
     document.head.appendChild(meta)
 
-    // Add class to body to prevent overscroll
-    document.body.classList.add("overflow-hidden", "touch-manipulation")
+    // Add class to body to prevent overscroll and optimize touch
+    document.body.classList.add("overflow-hidden", "touch-manipulation", "select-none")
+    
+    // Add CSS for hover media queries
+    const style = document.createElement("style")
+    style.textContent = `
+      @media (hover: none) and (pointer: coarse) {
+        .hover\\:bg-gray-50:hover { background-color: inherit !important; }
+        .hover\\:text-blue-600:hover { color: inherit !important; }
+        .hover\\:bg-blue-50:hover { background-color: inherit !important; }
+        .hover\\:border-blue-200:hover { border-color: inherit !important; }
+        .hover\\:shadow-md:hover { box-shadow: inherit !important; }
+        .hover\\:bg-blue-700:hover { background-color: inherit !important; }
+        .hover\\:bg-red-600:hover { background-color: inherit !important; }
+      }
+    `
+    document.head.appendChild(style)
 
     return () => {
-      document.head.removeChild(meta)
-      document.body.classList.remove("overflow-hidden", "touch-manipulation")
+      if (document.head.contains(meta)) document.head.removeChild(meta)
+      if (document.head.contains(style)) document.head.removeChild(style)
+      document.body.classList.remove("overflow-hidden", "touch-manipulation", "select-none")
     }
   }, [])
 
@@ -259,8 +275,9 @@ function CarsonUIContent() {
   const resizeTextarea = (textarea: HTMLTextAreaElement) => {
     // Reset height to auto to get the correct scrollHeight
     textarea.style.height = "auto"
-    // Set the height to scrollHeight to fit the content
-    textarea.style.height = `${Math.min(textarea.scrollHeight, isMobile ? 100 : 120)}px`
+    // Set the height to scrollHeight to fit the content, with stricter mobile limits
+    const maxHeight = isMobile ? 80 : 120;
+    textarea.style.height = `${Math.min(textarea.scrollHeight, maxHeight)}px`
   };
 
   const handleInput = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -321,20 +338,19 @@ function CarsonUIContent() {
           </div>
         ) : (
           // Initial input mode
-          <div className="flex flex-col justify-center items-center h-full min-h-screen bg-gray-50">
+          <div className="flex flex-col justify-center items-center h-full min-h-screen bg-gradient-to-br from-gray-50 via-blue-50/30 to-gray-50">
             <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 flex flex-col justify-center items-center min-h-screen">
             <div className={cn("w-full transition-all duration-300 flex flex-col items-center", contentWidth)}>
                 {/* Header Section */}
                 <div className="text-center mb-12 sm:mb-16">
-                  <div className="inline-flex items-center gap-3 sm:gap-4 bg-white px-6 sm:px-8 py-3 sm:py-4 rounded-full shadow-sm border border-gray-200 mb-8 sm:mb-12">
+                  <div className="inline-flex items-center gap-3 sm:gap-4 bg-white px-6 sm:px-8 py-3 sm:py-4 rounded-full shadow-sm border border-gray-200 mb-12 sm:mb-16">
                     <div className="w-8 h-8 sm:w-10 sm:h-10 bg-blue-600 rounded-full flex items-center justify-center">
                       <div className="w-4 h-4 sm:w-5 sm:h-5 bg-white rounded-full"></div>
                     </div>
                     <span className="text-2xl sm:text-3xl lg:text-4xl font-bold text-gray-900">Carson</span>
                   </div>
-                  <p className="text-lg sm:text-xl text-gray-600 max-w-4xl mx-auto leading-relaxed">
-                    Hi, I'm Carson. I'll help you understand medicine clearly and deeply through 
-                    interactive conversations and comprehensive explanations.
+                  <p className="text-lg sm:text-xl text-gray-600 max-w-3xl mx-auto leading-relaxed">
+                    Your AI medical tutor for deep, interactive learning
                   </p>
                 </div>
 
@@ -357,7 +373,7 @@ function CarsonUIContent() {
                         value={query}
                         onChange={handleInput}
                         placeholder="What would you like to understand better?"
-                            className="w-full px-4 sm:px-6 py-4 sm:py-6 min-h-[60px] sm:min-h-[80px] max-h-[150px] md:max-h-[200px] text-base sm:text-lg bg-transparent border-0 focus:ring-0 focus:outline-none resize-none placeholder-gray-500"
+                        className="w-full px-4 sm:px-6 py-4 sm:py-6 min-h-[60px] sm:min-h-[80px] max-h-[80px] sm:max-h-[150px] md:max-h-[200px] text-base sm:text-lg bg-transparent border-0 focus:ring-0 focus:outline-none resize-none placeholder-gray-500 overflow-hidden"
                         style={{ fontSize: "16px" }}
                         rows={1}
                         disabled={isLoading || isTransitioning}
@@ -523,8 +539,16 @@ function QuickActionButton({ icon, label, onClick }: QuickActionButtonProps) {
 
   return (
     <button
-      className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2 sm:py-3 bg-white hover:bg-gray-50 rounded-lg sm:rounded-xl text-gray-700 hover:text-blue-600 text-sm sm:text-base font-medium transition-all duration-200 border border-gray-200 hover:border-blue-200 shadow-sm hover:shadow-md"
+      className={cn(
+        "flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2 sm:py-3 bg-white rounded-lg sm:rounded-xl text-gray-700 text-sm sm:text-base font-medium transition-all duration-200 border border-gray-200 shadow-sm",
+        "focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2",
+        "active:scale-95 active:bg-gray-50",
+        !isMobile && "hover:bg-gray-50 hover:text-blue-600 hover:border-blue-200 hover:shadow-md"
+      )}
       onClick={onClick}
+      type="button"
+      role="button"
+      tabIndex={0}
     >
       {icon}
       {label}
