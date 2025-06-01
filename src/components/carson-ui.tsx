@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils"
 
 export default function CarsonUI() {
   // Add viewport meta tag for better mobile behavior
+   console.log("CarsonUI is now ready")
   useEffect(() => {
     // Add viewport meta tag to prevent scaling and improve mobile rendering
     const meta = document.createElement("meta")
