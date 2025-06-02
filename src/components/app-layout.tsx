@@ -14,7 +14,7 @@ interface AppLayoutProps {
 }
 
 export function AppLayout({ children }: AppLayoutProps) {
-  const { collapsed, isMobile, setSidebarOpen } = useSidebarState()
+  const { collapsed, setSidebarOpen } = useSidebarState()
   const { isMapOpen, clearKnowledgeMap } = useKnowledgeMap()
   const { clearSession } = useSession()
   const pathname = usePathname()
@@ -29,7 +29,7 @@ export function AppLayout({ children }: AppLayoutProps) {
     document.head.appendChild(meta)
 
     // Add class to body to prevent overscroll and optimize touch
-    document.body.classList.add("overflow-hidden", "touch-manipulation", "select-none")
+    document.body.classList.add("touch-manipulation")
     
     // Add CSS for hover media queries and smooth transitions
     const style = document.createElement("style")
@@ -52,13 +52,19 @@ export function AppLayout({ children }: AppLayoutProps) {
       .content-transition {
         transition: margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1), transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
       }
+      
+      /* Allow natural scrolling on mobile */
+      body {
+        -webkit-overflow-scrolling: touch;
+        overscroll-behavior: contain;
+      }
     `
     document.head.appendChild(style)
 
     return () => {
       if (document.head.contains(meta)) document.head.removeChild(meta)
       if (document.head.contains(style)) document.head.removeChild(style)
-      document.body.classList.remove("overflow-hidden", "touch-manipulation", "select-none")
+      document.body.classList.remove("touch-manipulation")
     }
   }, [])
 
@@ -88,25 +94,11 @@ export function AppLayout({ children }: AppLayoutProps) {
     // so we don't clear anything
   }, [pathname, clearSession, clearKnowledgeMap])
 
-  // Handle new chat (reset to home)
+  // Handle new chat (reset to home) - user controls sidebar manually
   const handleNewChat = () => {
     // Clear session and knowledge map data
     clearSession()
     clearKnowledgeMap()
-    
-    // Close sidebar on mobile after new chat
-    if (isMobile) {
-      setSidebarOpen(false)
-    }
-  }
-
-  // Calculate the left margin based on sidebar state - using exact pixel values for smoother transitions
-  const getMainContentMargin = () => {
-    if (isMobile) {
-      return "ml-0" // No margin on mobile
-    } else {
-      return collapsed ? "ml-[60px]" : "ml-[260px]" // Exact pixel values matching sidebar widths
-    }
   }
 
   // Determine if we should show knowledge map (only on main conversation page)
@@ -122,7 +114,9 @@ export function AppLayout({ children }: AppLayoutProps) {
       <div
         className={cn(
           "flex-1 flex flex-col content-transition",
-          getMainContentMargin(),
+          // Responsive margins: no margin on mobile, responsive margin on desktop based on sidebar state
+          "ml-0 md:ml-[60px]",
+          !collapsed && "md:ml-[260px]"
         )}
       >
         {children}

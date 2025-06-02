@@ -7,10 +7,9 @@ import { cn } from "@/lib/utils"
 
 interface ThemeToggleProps {
   collapsed?: boolean
-  isMobile?: boolean
 }
 
-export function ThemeToggle({ collapsed, isMobile }: ThemeToggleProps) {
+export function ThemeToggle({ collapsed }: ThemeToggleProps) {
   const { theme, toggleTheme, isTransitioning } = useTheme()
 
   const getIcon = () => {
@@ -29,7 +28,8 @@ export function ThemeToggle({ collapsed, isMobile }: ThemeToggleProps) {
       variant="ghost"
       className={cn(
         "text-gray-300 hover:text-white hover:bg-gray-800 dark:hover:bg-gray-800 transition-all duration-200",
-        collapsed && !isMobile ? "w-10 h-10 p-0 mx-auto justify-center" : "w-full justify-start gap-3 py-3",
+        "w-full justify-start gap-3 py-3 md:w-auto",
+        collapsed && "md:w-10 md:h-10 md:p-0 md:mx-auto md:justify-center",
         isTransitioning && "pointer-events-none opacity-70"
       )}
       onClick={toggleTheme}
@@ -39,7 +39,7 @@ export function ThemeToggle({ collapsed, isMobile }: ThemeToggleProps) {
       <div className="relative">
         {getIcon()}
       </div>
-      {(!collapsed || isMobile) && <span className="text-base">{getLabel()}</span>}
+      <span className={cn("text-base", collapsed && "md:hidden")}>{getLabel()}</span>
     </Button>
   )
 } 

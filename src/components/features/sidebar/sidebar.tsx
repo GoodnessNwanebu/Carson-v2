@@ -13,129 +13,108 @@ interface SidebarProps {
 }
 
 export function Sidebar({ onNewChat }: SidebarProps) {
-  const { collapsed, setCollapsed, sidebarOpen, setSidebarOpen, isMobile } = useSidebarState()
+  const { collapsed, setCollapsed, sidebarOpen, setSidebarOpen } = useSidebarState()
   const router = useRouter()
   const pathname = usePathname()
 
   const handleNavigation = (path: string) => {
     router.push(path)
-    // Close sidebar on mobile after navigation
-    if (isMobile) {
-      setSidebarOpen(false)
-    }
+    // Sidebar stays open - user controls when to close it
   }
 
   return (
     <>
       {/* Mobile menu button - only visible on mobile when sidebar is closed */}
-      {isMobile && !sidebarOpen && (
-        <Button
-          variant="ghost"
-          size="icon"
-          className="fixed top-4 left-4 z-50 md:hidden h-10 w-10 flex items-center justify-center"
-          onClick={() => setSidebarOpen(true)}
-        >
-          <Menu size={24} />
-        </Button>
-      )}
+      <Button
+        variant="ghost"
+        size="icon"
+        className={cn(
+          "fixed top-4 left-4 z-50 h-10 w-10 flex items-center justify-center bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700 shadow-sm border border-gray-200 dark:border-gray-600 transition-opacity duration-200",
+          // Show only on mobile when sidebar is closed
+          "md:hidden",
+          sidebarOpen ? "opacity-0 pointer-events-none" : "opacity-100"
+        )}
+        onClick={() => setSidebarOpen(true)}
+      >
+        <Menu size={24} />
+      </Button>
 
       {/* Mobile backdrop overlay */}
-      {isMobile && sidebarOpen && (
-        <div 
-          className="fixed inset-0 bg-black/50 z-40"
-          onClick={() => setSidebarOpen(false)}
-        />
-      )}
+      <div 
+        className={cn(
+          "fixed inset-0 bg-black/50 z-40 md:hidden transition-opacity duration-200",
+          sidebarOpen ? "opacity-100" : "opacity-0 pointer-events-none"
+        )}
+        onClick={() => setSidebarOpen(false)}
+      />
 
       {/* Sidebar */}
       <div
         className={cn(
           "fixed inset-y-0 left-0 z-40 flex flex-col bg-gray-900 text-white sidebar-transition",
           "bg-gray-900 dark:bg-gray-950 border-r border-gray-800 dark:border-gray-700",
-          isMobile 
-            ? cn("w-[280px]", sidebarOpen ? "translate-x-0" : "-translate-x-full")
-            : collapsed 
-              ? "w-[60px]" 
-              : "w-[260px]",
+          // Mobile: full width, slide in/out
+          "w-[280px] md:w-auto",
+          sidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0",
+          // Desktop: collapsed/expanded width
+          collapsed ? "md:w-[60px]" : "md:w-[260px]"
         )}
       >
         {/* Top section with logo and new chat */}
         <div className="p-4 border-b border-gray-800 dark:border-gray-700">
-          <div className={cn("flex items-center mb-6", collapsed && !isMobile ? "justify-center" : "justify-between")}>
-            {/* Logo - only show when not collapsed or on mobile */}
-            {(!collapsed || isMobile) && (
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
-                  <div className="w-4 h-4 bg-white rounded-full"></div>
-                </div>
-                <span className="text-xl font-bold text-white">Carson</span>
+          <div className={cn("flex items-center mb-6", collapsed ? "md:justify-center justify-between" : "justify-between")}>
+            {/* Logo - always show on mobile, show on desktop when not collapsed */}
+            <div className={cn("flex items-center gap-3", collapsed && "md:hidden")}>
+              <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
+                <div className="w-4 h-4 bg-white rounded-full"></div>
               </div>
-            )}
+              <span className="text-xl font-bold text-white">Carson</span>
+            </div>
 
-            {/* Close button for mobile - positioned opposite to logo */}
-            {isMobile && sidebarOpen && (
-              <button
-                onClick={() => setSidebarOpen(false)}
-                className="h-10 w-10 bg-white dark:bg-gray-800 rounded-md flex items-center justify-center text-gray-900 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-              >
-                <X size={20} />
-              </button>
-            )}
+            {/* Close button for mobile */}
+            <button
+              className={cn(
+                "h-10 w-10 bg-white dark:bg-gray-800 rounded-md flex items-center justify-center text-gray-900 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors",
+                "md:hidden",
+                sidebarOpen ? "opacity-100" : "opacity-0 pointer-events-none"
+              )}
+              onClick={() => setSidebarOpen(false)}
+            >
+              <X size={20} />
+            </button>
 
-            {/* Collapse toggle for desktop */}
-            {!isMobile && (
-              <Button
-                variant="ghost"
-                size="icon"
-                className={cn(
-                  "h-8 w-8 rounded-md text-gray-400 hover:text-white hover:bg-gray-800 dark:hover:bg-gray-800",
-                  collapsed && "mx-auto",
-                )}
-                onClick={() => setCollapsed(!collapsed)}
-              >
-                {collapsed ? "→" : "←"}
-              </Button>
-            )}
+            {/* Collapse toggle for desktop only */}
+            <Button
+              variant="ghost"
+              size="icon"
+              className={cn(
+                "h-8 w-8 rounded-md text-gray-400 hover:text-white hover:bg-gray-800 dark:hover:bg-gray-800 hidden md:flex",
+                collapsed && "mx-auto",
+              )}
+              onClick={() => setCollapsed(!collapsed)}
+            >
+              {collapsed ? "→" : "←"}
+            </Button>
           </div>
           <div className="mb-6">
-            {collapsed && !isMobile ? (
-              // Collapsed state - just icon button like other nav items
-              <Button
-                variant="ghost"
-                size="icon"
-                className="w-10 h-10 mx-auto text-gray-300 hover:text-white hover:bg-gray-800 transition-all duration-200"
-                onClick={() => {
-                  onNewChat?.()
-                  handleNavigation('/')
-                }}
-              >
-                <MessageSquarePlus size={16} />
-              </Button>
-            ) : (
-              // Expanded state - full gradient button
-              <div
-                className="relative group bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white rounded-xl shadow-lg hover:shadow-xl transition-all duration-200 overflow-hidden cursor-pointer"
-                onClick={() => {
-                  onNewChat?.()
-                  handleNavigation('/')
-                }}
-              >
-                <Button
-                  className="w-full h-full bg-transparent hover:bg-white/10 border-0 shadow-none text-white font-medium px-4 py-3 justify-start gap-3 transition-all duration-200"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    onNewChat?.()
-                    handleNavigation('/')
-                  }}
-              >
-                <MessageSquarePlus size={isMobile ? 20 : 18} className="flex-shrink-0" />
-                <span className="text-[15px]">New conversation</span>
-              </Button>
-            
-                {/* Subtle shine effect */}
-              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent -skew-x-12 -translate-x-full group-hover:translate-x-full transition-transform duration-700 pointer-events-none"></div>
-              </div>
-            )}
+            {/* New conversation button - clean responsive design */}
+            <Button
+              className={cn(
+                "w-full transition-all duration-200 font-medium px-4 py-3 justify-start gap-3 text-white rounded-xl shadow-lg hover:shadow-xl bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800",
+                // Desktop collapsed: override to icon-only style
+                collapsed && "md:w-10 md:h-10 md:mx-auto md:p-0 md:text-gray-300 md:hover:text-white md:hover:bg-gray-800 md:justify-center md:bg-none md:from-transparent md:to-transparent md:hover:from-transparent md:hover:to-transparent md:shadow-none md:rounded-md"
+              )}
+              onClick={() => {
+                onNewChat?.()
+                handleNavigation('/')
+              }}
+            >
+              <MessageSquarePlus size={collapsed ? 16 : 18} className="flex-shrink-0" />
+              <span className={cn("text-[15px]", collapsed && "md:hidden")}>New conversation</span>
+              
+              {/* Subtle shine effect - hide when collapsed on desktop */}
+              <div className={cn("absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent -skew-x-12 -translate-x-full group-hover:translate-x-full transition-transform duration-700 pointer-events-none", collapsed && "md:hidden")} />
+            </Button>
           </div>
         </div>
 
@@ -146,7 +125,6 @@ export function Sidebar({ onNewChat }: SidebarProps) {
               icon={Clock} 
               label="Recents" 
               collapsed={collapsed} 
-              isMobile={isMobile}
               active={pathname === '/recents'}
               onClick={() => handleNavigation('/recents')} 
             />
@@ -154,7 +132,6 @@ export function Sidebar({ onNewChat }: SidebarProps) {
               icon={FileText} 
               label="Journal" 
               collapsed={collapsed} 
-              isMobile={isMobile}
               active={pathname === '/journal'}
               onClick={() => handleNavigation('/journal')} 
             />
@@ -162,7 +139,6 @@ export function Sidebar({ onNewChat }: SidebarProps) {
               icon={Route} 
               label="Knowledge Journey" 
               collapsed={collapsed} 
-              isMobile={isMobile}
               active={pathname === '/journey'}
               onClick={() => handleNavigation('/journey')} 
             />
@@ -171,19 +147,17 @@ export function Sidebar({ onNewChat }: SidebarProps) {
                 icon={BookOpen} 
                 label="Explorations" 
                 collapsed={collapsed} 
-                isMobile={isMobile}
                 active={pathname === '/explorations'}
                 onClick={() => handleNavigation('/explorations')} 
               />
               
               {/* Explorations submenu when expanded */}
-              {(!collapsed || isMobile) && (
+              {!collapsed && (
                 <div className="ml-6 mt-2 space-y-2">
                   <NavSubItem
                     icon={HelpCircle}
                     label="Past Questions"
                     collapsed={collapsed}
-                    isMobile={isMobile}
                     active={pathname === '/question-solver'}
                     onClick={() => handleNavigation('/question-solver')}
                   />
@@ -200,22 +174,19 @@ export function Sidebar({ onNewChat }: SidebarProps) {
               icon={Settings} 
               label="Settings" 
               collapsed={collapsed} 
-              isMobile={isMobile}
               onClick={() => handleNavigation('/settings')} 
             />
-            <ThemeToggle collapsed={collapsed} isMobile={isMobile} />
+            <ThemeToggle collapsed={collapsed} />
             <NavItem 
               icon={User} 
               label="Profile" 
               collapsed={collapsed} 
-              isMobile={isMobile}
               onClick={() => handleNavigation('/profile')} 
             />
             <NavItem 
               icon={LogOut} 
               label="Logout" 
               collapsed={collapsed} 
-              isMobile={isMobile}
               onClick={() => {}} 
             />
           </div>
@@ -229,24 +200,25 @@ interface NavItemProps {
   icon: React.ElementType
   label: string
   collapsed: boolean
-  isMobile: boolean
   active?: boolean
   onClick?: () => void
 }
 
-function NavItem({ icon: Icon, label, collapsed, isMobile, active, onClick }: NavItemProps) {
+function NavItem({ icon: Icon, label, collapsed, active, onClick }: NavItemProps) {
   return (
     <Button
       variant="ghost"
       className={cn(
         "text-gray-300 hover:text-white hover:bg-gray-800 dark:hover:bg-gray-800",
         active && "bg-gray-800 dark:bg-gray-800 text-white",
-        collapsed && !isMobile ? "w-10 h-10 p-0 mx-auto justify-center" : "w-full justify-start gap-3 py-3",
+        // Mobile: always full width, Desktop: collapsed/expanded based on state
+        "w-full justify-start gap-3 py-3 md:w-auto",
+        collapsed && "md:w-10 md:h-10 md:p-0 md:mx-auto md:justify-center"
       )}
       onClick={onClick}
     >
-      <Icon size={isMobile ? 22 : 16} />
-      {(!collapsed || isMobile) && <span className="text-base">{label}</span>}
+      <Icon size={16} />
+      <span className={cn("text-base", collapsed && "md:hidden")}>{label}</span>
     </Button>
   )
 }
@@ -255,12 +227,11 @@ interface NavSubItemProps {
   icon: React.ElementType
   label: string
   collapsed: boolean
-  isMobile: boolean
   active?: boolean
   onClick?: () => void
 }
 
-function NavSubItem({ icon: Icon, label, collapsed, isMobile, active, onClick }: NavSubItemProps) {
+function NavSubItem({ icon: Icon, label, collapsed, active, onClick }: NavSubItemProps) {
   return (
     <Button
       variant="ghost"

@@ -6,13 +6,14 @@ import { useState, useRef, useEffect } from "react"
 import { useKnowledgeMap } from "../knowledge-map/knowledge-map-context"
 import { useSession } from "./session-context"
 import { cn } from "@/lib/utils"
-import { Plus, Paperclip, ArrowUp, AlertCircle, RefreshCw, Mic, MicOff, Camera, FileText, Image } from "lucide-react"
+import { Plus, Paperclip, ArrowUp, AlertCircle, RefreshCw, Mic, MicOff, Camera, FileText, Image, Menu, Route } from "lucide-react"
 import { useSidebarState } from "../sidebar/sidebar-context"
 import { callLLM } from "@/lib/prompts/llm-service"
 import { CarsonSessionContext } from "@/lib/prompts/carsonTypes"
 import { v4 as uuidv4 } from 'uuid';
 import { assessUserResponse, AssessmentResult, ResponseType, updateSessionAfterAssessment } from "@/lib/prompts/assessmentEngine";
 import { CompletionCelebration } from "../knowledge-map/knowledge-map-animations";
+import { Button } from "@/components/ui/button"
 
 // Simple markdown processor for Carson's responses
 const processMarkdown = (text: string): React.ReactNode[] => {
@@ -74,7 +75,8 @@ export function Conversation({ initialTopic, onInitialTopicUsed }: { initialTopi
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
-  const { isMobile } = useSidebarState()
+  const { setSidebarOpen } = useSidebarState()
+  const { isMapOpen, toggleMap } = useKnowledgeMap()
   const [isScrolled, setIsScrolled] = useState(false)
   const [initialTopicSubmitted, setInitialTopicSubmitted] = useState(false);
   const hasSubmittedInitialTopic = useRef(false);
@@ -197,7 +199,7 @@ export function Conversation({ initialTopic, onInitialTopicUsed }: { initialTopi
     // Reset height to auto to get the correct scrollHeight
     textarea.style.height = "auto"
     // Set the height to scrollHeight to fit the content
-    textarea.style.height = `${Math.min(textarea.scrollHeight, isMobile ? 100 : 120)}px`
+    textarea.style.height = `${Math.min(textarea.scrollHeight, 120)}px`
   };
 
   // Extracted message submission logic
@@ -207,10 +209,6 @@ export function Conversation({ initialTopic, onInitialTopicUsed }: { initialTopi
     setInput("");
     setIsConversationLoading(true);
     setError(null); // Clear any existing errors
-
-    if (isMobile) {
-      inputRef.current?.blur();
-    }
 
     try {
       if (!session) {
@@ -538,27 +536,53 @@ export function Conversation({ initialTopic, onInitialTopicUsed }: { initialTopi
   };
 
   return (
-    <div className="flex flex-col h-full bg-white">
+    <div className="flex flex-col h-full bg-white dark:bg-gray-900">
       {/* Completion celebration */}
       <CompletionCelebration 
         isVisible={showCelebration} 
         onComplete={() => setShowCelebration(false)} 
       />
       
-      {/* Sticky header for mobile */}
-      {isMobile && (
-        <div
-          className={cn(
-            "fixed top-0 left-0 right-0 h-16 bg-white shadow-sm transition-all duration-300 z-10",
-            isScrolled ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-full",
-          )}
-        />
-      )}
+      {/* Sticky header for mobile - full screen width like ChatGPT/Claude */}
+      <div
+        className={cn(
+          "fixed top-0 left-0 right-0 w-full h-16 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 shadow-sm transition-all duration-300 z-50 flex items-center justify-between px-4 md:hidden",
+          isScrolled ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-full",
+        )}
+      >
+        {/* Left side - Hamburger menu */}
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-10 w-10 flex items-center justify-center text-gray-900 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700 shrink-0"
+          onClick={() => setSidebarOpen(true)}
+        >
+          <Menu size={24} />
+        </Button>
+
+        {/* Center - Carson logo */}
+        <div className="flex items-center gap-3 flex-1 justify-center">
+          <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
+            <div className="w-4 h-4 bg-white rounded-full"></div>
+          </div>
+          <span className="text-xl font-bold text-gray-900 dark:text-white">Carson</span>
+        </div>
+
+        {/* Right side - Knowledge map toggle */}
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-10 w-10 flex items-center justify-center text-gray-900 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700 shrink-0"
+          onClick={() => toggleMap()}
+        >
+          <Route size={24} />
+        </Button>
+      </div>
 
       {/* Messages container - with scroll detection */}
       <div
         ref={scrollContainerRef}
-        className={cn("flex-1 overflow-y-auto pt-16 md:pt-20 pb-4 md:pb-6 bg-gray-50", isMobile ? "px-[5px]" : "px-4")}
+        className="flex-1 overflow-y-auto pt-16 md:pt-20 pb-4 md:pb-6 bg-gray-50 dark:bg-gray-900 px-1 md:px-4"
         data-conversation-scroll
       >
         <div className="max-w-4xl mx-auto space-y-4 md:space-y-6">
@@ -571,8 +595,8 @@ export function Conversation({ initialTopic, onInitialTopicUsed }: { initialTopi
                 className={cn(
                   "px-4 md:px-6 py-3 md:py-4 break-words",
                   message.role === "assistant"
-                    ? "bg-white text-gray-800 max-w-full md:max-w-3xl border border-gray-200 rounded-xl sm:rounded-2xl rounded-bl-md shadow-sm"
-                    : "bg-blue-600 text-white max-w-[75%] sm:max-w-[70%] md:max-w-[65%] rounded-3xl rounded-br-lg"
+                    ? "bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 max-w-full md:max-w-3xl border border-gray-200 dark:border-gray-700 rounded-xl sm:rounded-2xl rounded-bl-md shadow-sm"
+                    : "bg-blue-600 dark:bg-blue-600 text-white max-w-[75%] sm:max-w-[70%] md:max-w-[65%] rounded-3xl rounded-br-lg"
                 )}
               >
                 <div className="text-sm md:text-base leading-relaxed whitespace-pre-line overflow-wrap-anywhere">
@@ -586,18 +610,18 @@ export function Conversation({ initialTopic, onInitialTopicUsed }: { initialTopi
           ))}
           {isConversationLoading && (
             <div className="flex justify-start">
-              <div className="bg-white text-gray-800 rounded-xl sm:rounded-2xl rounded-bl-md px-4 md:px-6 py-3 md:py-4 shadow-sm border border-gray-200">
+              <div className="bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 rounded-xl sm:rounded-2xl rounded-bl-md px-4 md:px-6 py-3 md:py-4 shadow-sm border border-gray-200 dark:border-gray-700">
                 <div className="flex space-x-2 items-center h-6">
                   <div
-                    className="w-2 h-2 rounded-full bg-blue-400 animate-bounce"
+                    className="w-2 h-2 rounded-full bg-blue-400 dark:bg-blue-500 animate-bounce"
                     style={{ animationDelay: "0ms" }}
                   ></div>
                   <div
-                    className="w-2 h-2 rounded-full bg-blue-400 animate-bounce"
+                    className="w-2 h-2 rounded-full bg-blue-400 dark:bg-blue-500 animate-bounce"
                     style={{ animationDelay: "150ms" }}
                   ></div>
                   <div
-                    className="w-2 h-2 rounded-full bg-blue-400 animate-bounce"
+                    className="w-2 h-2 rounded-full bg-blue-400 dark:bg-blue-500 animate-bounce"
                     style={{ animationDelay: "300ms" }}
                   ></div>
                 </div>
@@ -607,11 +631,11 @@ export function Conversation({ initialTopic, onInitialTopicUsed }: { initialTopi
           
           {error && (
             <div className="flex justify-center">
-              <div className="bg-red-50 border border-red-200 rounded-xl sm:rounded-2xl px-4 md:px-6 py-4 md:py-5 max-w-md shadow-sm">
+              <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl sm:rounded-2xl px-4 md:px-6 py-4 md:py-5 max-w-md shadow-sm">
                 <div className="flex items-start space-x-3">
-                  <AlertCircle className="h-5 w-5 text-red-500 flex-shrink-0 mt-0.5" />
+                  <AlertCircle className="h-5 w-5 text-red-500 dark:text-red-400 flex-shrink-0 mt-0.5" />
                   <div className="flex-1">
-                    <p className="text-sm text-red-800 mb-3">{error}</p>
+                    <p className="text-sm text-red-800 dark:text-red-200 mb-3">{error}</p>
                     <button
                       onClick={retryLastAction}
                       className="inline-flex items-center gap-2 bg-red-500 text-white px-4 py-2 rounded-lg text-sm hover:bg-red-600 transition-colors shadow-sm"
@@ -630,10 +654,10 @@ export function Conversation({ initialTopic, onInitialTopicUsed }: { initialTopi
       </div>
 
       {/* Responsive input form - improved mobile behavior */}
-      <div className={cn("border-t border-gray-200 bg-gray-50", isMobile ? "p-4 px-[5px]" : "p-6")}>
+      <div className="border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 p-4 md:p-6">
         <form onSubmit={handleSubmit} className="max-w-4xl mx-auto">
           <div
-            className="relative flex items-end bg-white border border-gray-200 rounded-xl md:rounded-2xl shadow-sm hover:border-gray-300 focus-within:border-blue-400 focus-within:ring-1 focus-within:ring-blue-200 transition-all duration-200"
+            className="relative flex items-end bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl md:rounded-2xl shadow-sm hover:border-gray-300 dark:hover:border-gray-600 focus-within:border-blue-400 dark:focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-200 dark:focus-within:ring-blue-800 transition-all duration-200"
             onClick={handleContainerClick}
           >
             {/* Left side icons - responsive */}
@@ -641,40 +665,40 @@ export function Conversation({ initialTopic, onInitialTopicUsed }: { initialTopi
               <button
                 type="button"
                 onClick={() => setShowAttachmentModal(!showAttachmentModal)}
-                className="p-2 md:p-2.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                className="p-2 md:p-2.5 text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
               >
-                <Plus size={isMobile ? 18 : 20} />
+                <Plus size={20} />
               </button>
 
               {/* Attachment options dropdown */}
               {showAttachmentModal && (
-                <div className="absolute bottom-full left-0 mb-2 bg-white rounded-xl sm:rounded-2xl shadow-xl border border-gray-200 p-3 z-50 min-w-[200px] drop-shadow-lg">
+                <div className="absolute bottom-full left-0 mb-2 bg-white dark:bg-gray-800 rounded-xl sm:rounded-2xl shadow-xl border border-gray-200 dark:border-gray-600 p-3 z-50 min-w-[200px] drop-shadow-lg">
                   <button
                     onClick={() => handleAttachmentOption('file')}
-                    className="w-full flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 transition-colors text-left"
+                    className="w-full flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-left"
                   >
-                    <div className="p-2 bg-blue-100 rounded-lg">
-                      <FileText size={18} className="text-blue-600" />
+                    <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
+                      <FileText size={18} className="text-blue-600 dark:text-blue-400" />
                     </div>
-                    <span className="text-sm font-medium text-gray-800">File</span>
+                    <span className="text-sm font-medium text-gray-800 dark:text-gray-200">File</span>
                   </button>
                   <button
                     onClick={() => handleAttachmentOption('camera')}
-                    className="w-full flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 transition-colors text-left"
+                    className="w-full flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-left"
                   >
-                    <div className="p-2 bg-green-100 rounded-lg">
-                      <Camera size={18} className="text-green-600" />
+                    <div className="p-2 bg-green-100 dark:bg-green-900/30 rounded-lg">
+                      <Camera size={18} className="text-green-600 dark:text-green-400" />
                     </div>
-                    <span className="text-sm font-medium text-gray-800">Camera</span>
+                    <span className="text-sm font-medium text-gray-800 dark:text-gray-200">Camera</span>
                   </button>
                   <button
                     onClick={() => handleAttachmentOption('photos')}
-                    className="w-full flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 transition-colors text-left"
+                    className="w-full flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-left"
                   >
-                    <div className="p-2 bg-purple-100 rounded-lg">
-                      <Image size={18} className="text-purple-600" />
+                    <div className="p-2 bg-purple-100 dark:bg-purple-900/30 rounded-lg">
+                      <Image size={18} className="text-purple-600 dark:text-purple-400" />
                     </div>
-                    <span className="text-sm font-medium text-gray-800">Photos</span>
+                    <span className="text-sm font-medium text-gray-800 dark:text-gray-200">Photos</span>
                   </button>
                 </div>
               )}
@@ -687,7 +711,7 @@ export function Conversation({ initialTopic, onInitialTopicUsed }: { initialTopi
               onChange={handleInput}
               placeholder="Reply to Carson..."
               name="carson-message"
-              className="flex-1 max-h-[100px] md:max-h-[200px] py-4 md:py-5 px-2 bg-transparent border-0 focus:ring-0 focus:outline-none resize-none text-base placeholder-gray-500"
+              className="flex-1 max-h-[100px] md:max-h-[200px] py-4 md:py-5 px-2 bg-transparent border-0 focus:ring-0 focus:outline-none resize-none text-base placeholder-gray-500 dark:placeholder-gray-400 text-gray-900 dark:text-gray-100"
               style={{ fontSize: "16px" }} // Prevents zoom on iOS Safari
               rows={1}
               disabled={isConversationLoading}
@@ -707,11 +731,9 @@ export function Conversation({ initialTopic, onInitialTopicUsed }: { initialTopi
               }}
               onFocus={() => {
                 // Scroll to bottom when keyboard appears on iOS
-                if (isMobile) {
-                  setTimeout(() => {
-                    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-                  }, 300);
-                }
+                setTimeout(() => {
+                  messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+                }, 300);
               }}
             />
 
@@ -725,9 +747,9 @@ export function Conversation({ initialTopic, onInitialTopicUsed }: { initialTopi
                   className="p-2 md:p-2.5 rounded-xl bg-blue-600 text-white hover:bg-blue-700 transition-all duration-200 shadow-sm"
                 >
                   {isConversationLoading ? (
-                    <div className="h-5 w-5 md:h-6 md:w-6 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    <div className="h-5 w-5 md:h-6 md:w-6 border-2 border-white border-t-transparent rounded-full animate-spin no-transition"></div>
                   ) : (
-                    <ArrowUp size={isMobile ? 18 : 20} />
+                    <ArrowUp size={20} />
                   )}
                 </button>
               ) : (
@@ -742,7 +764,7 @@ export function Conversation({ initialTopic, onInitialTopicUsed }: { initialTopi
                       ? "bg-red-500 text-white hover:bg-red-600"
                       : isTranscribing
                       ? "bg-blue-500 text-white"
-                      : "text-gray-500 hover:text-blue-600 hover:bg-blue-50",
+                      : "text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20",
                     (isConversationLoading || isTranscribing) && "cursor-not-allowed opacity-50"
                   )}
                   title={
@@ -754,11 +776,11 @@ export function Conversation({ initialTopic, onInitialTopicUsed }: { initialTopi
                   }
                 >
                   {isTranscribing ? (
-                    <div className="h-4 w-4 md:h-5 md:w-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    <div className="h-4 w-4 md:h-5 md:w-5 border-2 border-white border-t-transparent rounded-full animate-spin no-transition"></div>
                   ) : isRecording ? (
-                    <MicOff size={isMobile ? 18 : 20} />
+                    <MicOff size={20} />
                   ) : (
-                    <Mic size={isMobile ? 18 : 20} />
+                    <Mic size={20} />
                   )}
                 </button>
               )}

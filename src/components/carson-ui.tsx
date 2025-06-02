@@ -24,8 +24,8 @@ export default function CarsonUI() {
     meta.content = "width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content"
     document.head.appendChild(meta)
  
-    // Add class to body to prevent overscroll and optimize touch
-    document.body.classList.add("overflow-hidden", "touch-manipulation", "select-none")
+    // Add class to body for touch optimization only
+    document.body.classList.add("touch-manipulation")
     
     // Add CSS for hover media queries
     const style = document.createElement("style")
@@ -39,13 +39,19 @@ export default function CarsonUI() {
         .hover\\:bg-blue-700:hover { background-color: inherit !important; }
         .hover\\:bg-red-600:hover { background-color: inherit !important; }
       }
+      
+      /* Allow natural scrolling on mobile */
+      body {
+        -webkit-overflow-scrolling: touch;
+        overscroll-behavior: contain;
+      }
     `
     document.head.appendChild(style)
 
     return () => {
       if (document.head.contains(meta)) document.head.removeChild(meta)
       if (document.head.contains(style)) document.head.removeChild(style)
-      document.body.classList.remove("overflow-hidden", "touch-manipulation", "select-none")
+      document.body.classList.remove("touch-manipulation")
     }
   }, [])
 
@@ -70,7 +76,7 @@ function CarsonUIContent() {
   const [isTransitioning, setIsTransitioning] = useState(false)
   const [initialTopic, setInitialTopic] = useState<string | null>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
-  const { collapsed, isMobile, setSidebarOpen, sidebarOpen } = useSidebarState()
+  const { collapsed, setSidebarOpen, sidebarOpen } = useSidebarState()
   const { isMapOpen, toggleMap, clearKnowledgeMap } = useKnowledgeMap()
   const { clearSession } = useSession()
   const [contentWidth, setContentWidth] = useState("max-w-2xl")
@@ -183,15 +189,15 @@ function CarsonUIContent() {
     }
   };
 
-  // Swipe handlers for sidebar (left edge swipe)
+  // Swipe handlers for sidebar (left edge swipe) - always active for touch devices
   const sidebarSwipeHandlers = useSwipeable({
     onSwipedRight: () => {
-      if (isMobile && !sidebarOpen) {
+      if (!sidebarOpen) {
         setSidebarOpen(true)
       }
     },
     onSwipedLeft: () => {
-      if (isMobile && sidebarOpen) {
+      if (sidebarOpen) {
         setSidebarOpen(false)
       }
     },
@@ -202,15 +208,15 @@ function CarsonUIContent() {
     touchEventOptions: { passive: false }
   })
 
-  // Swipe handlers for knowledge map (right edge swipe)
+  // Swipe handlers for knowledge map (right edge swipe) - always active for touch devices
   const knowledgeMapSwipeHandlers = useSwipeable({
     onSwipedLeft: () => {
-      if (isMobile && !isMapOpen && inConversation) {
+      if (!isMapOpen && inConversation) {
         toggleMap()
       }
     },
     onSwipedRight: () => {
-      if (isMobile && isMapOpen && inConversation) {
+      if (isMapOpen && inConversation) {
         toggleMap()
       }
     },
@@ -221,23 +227,10 @@ function CarsonUIContent() {
     touchEventOptions: { passive: false }
   })
 
-  // Update content width when sidebar state changes
+  // Update content width when sidebar state changes - CSS responsive
   useEffect(() => {
-    if (isMobile) {
-      setContentWidth("max-w-xl")
-    } else {
-      setContentWidth(collapsed ? "max-w-3xl" : "max-w-2xl")
-    }
-  }, [collapsed, isMobile])
-
-  // Calculate the left margin based on sidebar state
-  const getMainContentMargin = () => {
-    if (isMobile) {
-      return "ml-0" // No margin on mobile
-    } else {
-      return collapsed ? "ml-[60px]" : "ml-[260px]" // Adjust based on sidebar width
-    }
-  }
+    setContentWidth(collapsed ? "max-w-3xl" : "max-w-2xl")
+  }, [collapsed])
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -257,7 +250,7 @@ function CarsonUIContent() {
     }, 1200)
   }
 
-  // Reset to home screen (new chat)
+  // Reset to home screen (new chat) - user controls sidebar manually
   const handleNewChat = () => {
     setQuery("")
     setInConversation(false)
@@ -268,20 +261,14 @@ function CarsonUIContent() {
     // Clear session and knowledge map data
     clearSession()
     clearKnowledgeMap()
-    
-    // Close sidebar on mobile and tablets after new chat
-    if (isMobile) {
-      setSidebarOpen(false)
-    }
   }
 
   // Auto-resize textarea based on content
   const resizeTextarea = (textarea: HTMLTextAreaElement) => {
     // Reset height to auto to get the correct scrollHeight
     textarea.style.height = "auto"
-    // Set the height to scrollHeight to fit the content, with stricter mobile limits
-    const maxHeight = isMobile ? 80 : 120;
-    textarea.style.height = `${Math.min(textarea.scrollHeight, maxHeight)}px`
+    // Set the height to scrollHeight to fit the content
+    textarea.style.height = `${Math.min(textarea.scrollHeight, 120)}px`
   };
 
   const handleInput = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -309,20 +296,18 @@ function CarsonUIContent() {
       {/* Only show knowledge map when in conversation */}
       {inConversation && <KnowledgeMapPanel />}
 
-      {/* Left edge swipe zone for sidebar */}
-      {isMobile && (
-        <div
-          {...sidebarSwipeHandlers}
-          className="fixed left-0 top-0 bottom-0 w-8 z-30 pointer-events-auto"
-          style={{ touchAction: 'pan-y' }}
-        />
-      )}
+      {/* Left edge swipe zone for sidebar - only on mobile */}
+      <div
+        {...sidebarSwipeHandlers}
+        className="fixed left-0 top-0 bottom-0 w-8 z-30 pointer-events-auto md:hidden"
+        style={{ touchAction: 'pan-y' }}
+      />
 
-      {/* Right edge swipe zone for knowledge map */}
-      {isMobile && inConversation && (
+      {/* Right edge swipe zone for knowledge map - only on mobile when in conversation */}
+      {inConversation && (
         <div
           {...knowledgeMapSwipeHandlers}
-          className="fixed right-0 top-0 bottom-0 w-8 z-30 pointer-events-auto"
+          className="fixed right-0 top-0 bottom-0 w-8 z-30 pointer-events-auto md:hidden"
           style={{ touchAction: 'pan-y' }}
         />
       )}
@@ -330,10 +315,12 @@ function CarsonUIContent() {
       <div
         className={cn(
           "flex-1 flex flex-col transition-all duration-700 ease-in-out",
-          getMainContentMargin(),
+          // Responsive margins: no margin on mobile, responsive margin on desktop
+          "ml-0 md:ml-[60px]",
+          !collapsed && "md:ml-[260px]",
           isTransitioning && "opacity-20 scale-98 blur-sm",
         )}
-        {...(isMobile ? knowledgeMapSwipeHandlers : {})}
+        {...knowledgeMapSwipeHandlers}
       >
         {inConversation ? (
           // Conversation mode
@@ -407,7 +394,7 @@ function CarsonUIContent() {
                                 className="p-2 sm:p-3 text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
                             disabled={isLoading || isTransitioning}
                           >
-                                <Plus size={isMobile ? 18 : 20} />
+                                <Plus size={20} />
                           </button>
 
                               {/* Attachment options dropdown */}
@@ -455,7 +442,7 @@ function CarsonUIContent() {
                             )}
                             title={deepDive ? "Deep dive enabled" : "Enable deep dive for detailed explanations"}
                           >
-                                <Telescope size={isMobile ? 18 : 20} />
+                                <Telescope size={20} />
                                 {deepDive && <span className="text-sm font-medium">Deep dive</span>}
                           </button>
                         </div>
@@ -472,7 +459,7 @@ function CarsonUIContent() {
                           {isLoading || isTransitioning ? (
                                     <div className="h-5 w-5 sm:h-6 sm:w-6 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
                                   ) : (
-                                    <SendHorizonal size={isMobile ? 18 : 20} />
+                                    <SendHorizonal size={20} />
                                   )}
                                 </button>
                               ) : (
@@ -501,9 +488,9 @@ function CarsonUIContent() {
                                   {isTranscribing ? (
                                     <div className="h-5 w-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
                                   ) : isRecording ? (
-                                    <MicOff size={isMobile ? 18 : 20} />
+                                    <MicOff size={20} />
                                   ) : (
-                                    <Mic size={isMobile ? 18 : 20} />
+                                    <Mic size={20} />
                           )}
                         </button>
                               )}
@@ -514,11 +501,11 @@ function CarsonUIContent() {
 
                   {/* Quick action buttons - responsive */}
                       <div className="flex flex-wrap justify-center gap-2 sm:gap-3 mt-6 sm:mt-8">
-                        <QuickActionButton icon={<PenLine size={isMobile ? 16 : 18} />} label="Explain" />
-                        <QuickActionButton icon={<GraduationCap size={isMobile ? 16 : 18} />} label="Learn" />
-                        <QuickActionButton icon={<Code size={isMobile ? 16 : 18} />} label="Mechanisms" />
-                        <QuickActionButton icon={<Coffee size={isMobile ? 16 : 18} />} label="Simplify" />
-                        <QuickActionButton icon={<Sparkles size={isMobile ? 16 : 18} />} label="Carson's choice" />
+                        <QuickActionButton icon={<PenLine size={18} />} label="Explain" />
+                        <QuickActionButton icon={<GraduationCap size={18} />} label="Learn" />
+                        <QuickActionButton icon={<Code size={18} />} label="Mechanisms" />
+                        <QuickActionButton icon={<Coffee size={18} />} label="Simplify" />
+                        <QuickActionButton icon={<Sparkles size={18} />} label="Carson's choice" />
                       </div>
                     </div>
                   </div>
@@ -539,16 +526,9 @@ interface QuickActionButtonProps {
 }
 
 function QuickActionButton({ icon, label, onClick }: QuickActionButtonProps) {
-  const { isMobile } = useSidebarState()
-
   return (
     <button
-      className={cn(
-        "flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2 sm:py-3 bg-white dark:bg-gray-700 rounded-lg sm:rounded-xl text-gray-700 dark:text-gray-200 text-sm sm:text-base font-medium transition-all duration-200 border border-gray-200 dark:border-gray-600 shadow-sm",
-        "focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800",
-        "active:scale-95 active:bg-gray-50 dark:active:bg-gray-600",
-        !isMobile && "hover:bg-gray-50 dark:hover:bg-gray-600 hover:text-blue-600 dark:hover:text-blue-400 hover:border-blue-200 dark:hover:border-blue-500 hover:shadow-md"
-      )}
+      className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2 sm:py-3 bg-white dark:bg-gray-700 rounded-lg sm:rounded-xl text-gray-700 dark:text-gray-200 text-sm sm:text-base font-medium transition-all duration-200 border border-gray-200 dark:border-gray-600 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800 active:scale-95 active:bg-gray-50 dark:active:bg-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600 hover:text-blue-600 dark:hover:text-blue-400 hover:border-blue-200 dark:hover:border-blue-500 hover:shadow-md"
       onClick={onClick}
       type="button"
       role="button"
