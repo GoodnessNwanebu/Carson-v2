@@ -29,14 +29,10 @@ export function useSession() {
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<CarsonSessionContext | null>(null)
 
-  // Load session from localStorage on mount
-  useEffect(() => {
-    const saved = localStorage.getItem('carsonSession');
-    if (saved) {
-      setSession(JSON.parse(saved));
-    }
-  }, []);
-
+  // Don't load session from localStorage on mount to prevent flicker
+  // The session is cleared on app refresh anyway via useEffect in CarsonUIContent
+  // If we need persistence in the future, we can add a flag to control this
+  
   // Save session to localStorage on every update
   useEffect(() => {
     if (session) {

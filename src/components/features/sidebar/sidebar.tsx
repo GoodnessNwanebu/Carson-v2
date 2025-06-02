@@ -5,7 +5,8 @@ import { Button } from "@/components/ui/button"
 import { BookOpen, Clock, FileText, LogOut, Menu, MessageSquarePlus, Route, Settings, User, X, HelpCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useSidebarState } from "./sidebar-context"
-import { useRouter } from "next/navigation"
+import { useRouter, usePathname } from "next/navigation"
+import { ThemeToggle } from "@/components/ui/theme-toggle"
 
 interface SidebarProps {
   onNewChat?: () => void
@@ -14,6 +15,7 @@ interface SidebarProps {
 export function Sidebar({ onNewChat }: SidebarProps) {
   const { collapsed, setCollapsed, sidebarOpen, setSidebarOpen, isMobile } = useSidebarState()
   const router = useRouter()
+  const pathname = usePathname()
 
   const handleNavigation = (path: string) => {
     router.push(path)
@@ -37,25 +39,44 @@ export function Sidebar({ onNewChat }: SidebarProps) {
         </Button>
       )}
 
+      {/* Mobile backdrop overlay */}
+      {isMobile && sidebarOpen && (
+        <div 
+          className="fixed inset-0 bg-black/50 z-40"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
       {/* Sidebar */}
       <div
         className={cn(
-          "fixed inset-y-0 left-0 z-40 flex flex-col bg-gray-900 text-white transition-all duration-300",
-          collapsed && !isMobile ? "w-[60px]" : "w-[260px]", // Always expanded on mobile
-          isMobile && !sidebarOpen ? "-translate-x-full" : "translate-x-0",
-          isMobile && "shadow-lg",
+          "fixed inset-y-0 left-0 z-40 flex flex-col bg-gray-900 text-white sidebar-transition",
+          "bg-gray-900 dark:bg-gray-950 border-r border-gray-800 dark:border-gray-700",
+          isMobile 
+            ? cn("w-[280px]", sidebarOpen ? "translate-x-0" : "-translate-x-full")
+            : collapsed 
+              ? "w-[60px]" 
+              : "w-[260px]",
         )}
       >
         {/* Top section with logo and new chat */}
-        <div className="p-4">
-          <div className="flex items-center justify-between mb-6">
-            {(!collapsed || isMobile) && <h1 className="text-xl font-semibold">Carson</h1>}
+        <div className="p-4 border-b border-gray-800 dark:border-gray-700">
+          <div className={cn("flex items-center mb-6", collapsed && !isMobile ? "justify-center" : "justify-between")}>
+            {/* Logo - only show when not collapsed or on mobile */}
+            {(!collapsed || isMobile) && (
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
+                  <div className="w-4 h-4 bg-white rounded-full"></div>
+                </div>
+                <span className="text-xl font-bold text-white">Carson</span>
+              </div>
+            )}
 
             {/* Close button for mobile - positioned opposite to logo */}
             {isMobile && sidebarOpen && (
               <button
                 onClick={() => setSidebarOpen(false)}
-                className="h-10 w-10 bg-white rounded-md flex items-center justify-center text-gray-900 hover:bg-gray-100 transition-colors"
+                className="h-10 w-10 bg-white dark:bg-gray-800 rounded-md flex items-center justify-center text-gray-900 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
               >
                 <X size={20} />
               </button>
@@ -67,7 +88,7 @@ export function Sidebar({ onNewChat }: SidebarProps) {
                 variant="ghost"
                 size="icon"
                 className={cn(
-                  "h-8 w-8 rounded-md text-gray-400 hover:text-white hover:bg-gray-800",
+                  "h-8 w-8 rounded-md text-gray-400 hover:text-white hover:bg-gray-800 dark:hover:bg-gray-800",
                   collapsed && "mx-auto",
                 )}
                 onClick={() => setCollapsed(!collapsed)}
@@ -126,6 +147,7 @@ export function Sidebar({ onNewChat }: SidebarProps) {
               label="Recents" 
               collapsed={collapsed} 
               isMobile={isMobile}
+              active={pathname === '/recents'}
               onClick={() => handleNavigation('/recents')} 
             />
             <NavItem 
@@ -133,6 +155,7 @@ export function Sidebar({ onNewChat }: SidebarProps) {
               label="Journal" 
               collapsed={collapsed} 
               isMobile={isMobile}
+              active={pathname === '/journal'}
               onClick={() => handleNavigation('/journal')} 
             />
             <NavItem 
@@ -140,6 +163,7 @@ export function Sidebar({ onNewChat }: SidebarProps) {
               label="Knowledge Journey" 
               collapsed={collapsed} 
               isMobile={isMobile}
+              active={pathname === '/journey'}
               onClick={() => handleNavigation('/journey')} 
             />
             <div className="relative">
@@ -148,6 +172,7 @@ export function Sidebar({ onNewChat }: SidebarProps) {
                 label="Explorations" 
                 collapsed={collapsed} 
                 isMobile={isMobile}
+                active={pathname === '/explorations'}
                 onClick={() => handleNavigation('/explorations')} 
               />
               
@@ -159,6 +184,7 @@ export function Sidebar({ onNewChat }: SidebarProps) {
                     label="Past Questions"
                     collapsed={collapsed}
                     isMobile={isMobile}
+                    active={pathname === '/question-solver'}
                     onClick={() => handleNavigation('/question-solver')}
                   />
                 </div>
@@ -168,7 +194,7 @@ export function Sidebar({ onNewChat }: SidebarProps) {
         </div>
 
         {/* Bottom section with settings and profile */}
-        <div className="border-t border-gray-800 p-4">
+        <div className="border-t border-gray-800 dark:border-gray-700 p-4">
           <div className="space-y-3">
             <NavItem 
               icon={Settings} 
@@ -177,6 +203,7 @@ export function Sidebar({ onNewChat }: SidebarProps) {
               isMobile={isMobile}
               onClick={() => handleNavigation('/settings')} 
             />
+            <ThemeToggle collapsed={collapsed} isMobile={isMobile} />
             <NavItem 
               icon={User} 
               label="Profile" 
@@ -212,8 +239,8 @@ function NavItem({ icon: Icon, label, collapsed, isMobile, active, onClick }: Na
     <Button
       variant="ghost"
       className={cn(
-        "text-gray-300 hover:text-white hover:bg-gray-800",
-        active && "bg-gray-800 text-white",
+        "text-gray-300 hover:text-white hover:bg-gray-800 dark:hover:bg-gray-800",
+        active && "bg-gray-800 dark:bg-gray-800 text-white",
         collapsed && !isMobile ? "w-10 h-10 p-0 mx-auto justify-center" : "w-full justify-start gap-3 py-3",
       )}
       onClick={onClick}
@@ -239,8 +266,8 @@ function NavSubItem({ icon: Icon, label, collapsed, isMobile, active, onClick }:
       variant="ghost"
       size="sm"
       className={cn(
-        "text-gray-400 hover:text-white hover:bg-gray-800 text-sm",
-        active && "bg-gray-800 text-white",
+        "text-gray-400 hover:text-white hover:bg-gray-800 dark:hover:bg-gray-800 text-sm",
+        active && "bg-gray-800 dark:bg-gray-800 text-white",
         "w-full justify-start gap-2 py-2 px-3",
       )}
       onClick={onClick}

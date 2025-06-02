@@ -57,22 +57,9 @@ export function KnowledgeMapProvider({ children }: { children: ReactNode }) {
   // State for knowledge map panel visibility
   const [isMapOpen, setIsMapOpen] = useState(false)
 
-  // Load knowledge map state from localStorage on mount
-  useEffect(() => {
-    const savedTopics = localStorage.getItem('carsonKnowledgeMap');
-    const savedTopicName = localStorage.getItem('carsonCurrentTopic');
-    const savedSubtopicIndex = localStorage.getItem('carsonCurrentSubtopicIndex');
-    
-    if (savedTopics) {
-      setTopics(JSON.parse(savedTopics));
-    }
-    if (savedTopicName) {
-      setCurrentTopicName(savedTopicName);
-    }
-    if (savedSubtopicIndex) {
-      setCurrentSubtopicIndex(parseInt(savedSubtopicIndex, 10));
-    }
-  }, []);
+  // Don't load knowledge map state from localStorage on mount to prevent flicker
+  // The knowledge map is cleared on app refresh anyway via the clearKnowledgeMap call
+  // If we need persistence in the future, we can add a flag to control this
 
   // Save knowledge map state to localStorage whenever it changes
   useEffect(() => {

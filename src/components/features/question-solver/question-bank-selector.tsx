@@ -331,14 +331,14 @@ export function QuestionBankSelector() {
   };
 
   return (
-    <div className="h-full overflow-auto">
+    <div className="h-full overflow-auto bg-gray-50 dark:bg-gray-900">
       <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
         {/* Upload Section - Enhanced */}
         <div className="mb-8 sm:mb-12">
-          <h1 className="text-xl sm:text-2xl font-semibold mb-6 sm:mb-8 text-gray-900 text-center sm:text-left">Upload Question Bank</h1>
+          <h1 className="text-xl sm:text-2xl font-semibold mb-6 sm:mb-8 text-gray-900 dark:text-gray-100 text-center sm:text-left">Upload Question Bank</h1>
           
           <div 
-            className="border-2 border-dashed border-gray-200 rounded-xl p-8 sm:p-12 text-center hover:border-gray-300 transition-colors"
+            className="border-2 border-dashed border-gray-200 dark:border-gray-700 rounded-xl p-8 sm:p-12 text-center hover:border-gray-300 dark:hover:border-gray-600 transition-colors bg-white dark:bg-gray-800"
             onDragOver={handleDragOver}
             onDrop={handleDrop}
           >
@@ -351,11 +351,11 @@ export function QuestionBankSelector() {
               disabled={isProcessing}
             />
             <label htmlFor="file-upload" className="cursor-pointer">
-              <Upload className="w-12 h-12 sm:w-16 sm:h-16 mx-auto mb-4 sm:mb-6 text-gray-300" />
-              <h3 className="text-lg sm:text-xl font-medium mb-2 sm:mb-3 text-gray-900">
+              <Upload className="w-12 h-12 sm:w-16 sm:h-16 mx-auto mb-4 sm:mb-6 text-gray-300 dark:text-gray-500" />
+              <h3 className="text-lg sm:text-xl font-medium mb-2 sm:mb-3 text-gray-900 dark:text-gray-100">
                 Drop your question bank file here or click to browse
               </h3>
-              <p className="text-gray-500 mb-4 sm:mb-6 text-sm sm:text-base">
+              <p className="text-gray-500 dark:text-gray-400 mb-4 sm:mb-6 text-sm sm:text-base">
                 Supports JSON, CSV, PDF, Excel, and QTI formats
               </p>
               <Button 
@@ -369,17 +369,17 @@ export function QuestionBankSelector() {
           </div>
           
           {selectedFile && (
-            <div className="mt-4 sm:mt-6 p-4 sm:p-6 bg-blue-50 rounded-xl border border-blue-100">
+            <div className="mt-4 sm:mt-6 p-4 sm:p-6 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-100 dark:border-blue-800">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-0">
                 <div className="flex-1">
-                  <p className="font-medium text-gray-900 text-sm sm:text-base">{selectedFile.name}</p>
-                  <p className="text-xs sm:text-sm text-gray-600">Size: {(selectedFile.size / 1024).toFixed(2)} KB</p>
+                  <p className="font-medium text-gray-900 dark:text-gray-100 text-sm sm:text-base">{selectedFile.name}</p>
+                  <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400">Size: {(selectedFile.size / 1024).toFixed(2)} KB</p>
                   
                   {/* Processing Status */}
                   {processingStatus === 'processing' && (
                     <div className="flex items-center gap-2 mt-2">
-                      <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
-                      <span className="text-sm text-blue-600">
+                      <Loader2 className="w-4 h-4 animate-spin text-blue-600 dark:text-blue-400" />
+                      <span className="text-sm text-blue-600 dark:text-blue-400">
                         {selectedFile.name.endsWith('.pdf') ? 'Parsing PDF and extracting questions...' : 'Processing file...'}
                       </span>
                     </div>
@@ -387,15 +387,15 @@ export function QuestionBankSelector() {
                   
                   {processingStatus === 'success' && (
                     <div className="flex items-center gap-2 mt-2">
-                      <CheckCircle className="w-4 h-4 text-green-600" />
-                      <span className="text-sm text-green-600">Successfully imported!</span>
+                      <CheckCircle className="w-4 h-4 text-green-600 dark:text-green-400" />
+                      <span className="text-sm text-green-600 dark:text-green-400">Successfully imported!</span>
                     </div>
                   )}
                   
                   {processingStatus === 'error' && (
                     <div className="flex items-center gap-2 mt-2">
-                      <AlertCircle className="w-4 h-4 text-red-600" />
-                      <span className="text-sm text-red-600">{errorMessage}</span>
+                      <AlertCircle className="w-4 h-4 text-red-600 dark:text-red-400" />
+                      <span className="text-sm text-red-600 dark:text-red-400">{errorMessage}</span>
                     </div>
                   )}
                 </div>
@@ -426,32 +426,32 @@ export function QuestionBankSelector() {
 
         {/* Available Banks - Clean Grid */}
         <div>
-          <h2 className="text-xl sm:text-2xl font-semibold mb-6 sm:mb-8 text-gray-900 text-center sm:text-left">Available Question Banks</h2>
+          <h2 className="text-xl sm:text-2xl font-semibold mb-6 sm:mb-8 text-gray-900 dark:text-gray-100 text-center sm:text-left">Available Question Banks</h2>
           <div className="grid gap-4 sm:gap-6">
             {availableBanks.map((bank) => (
-              <div key={bank.id} className="bg-white border border-gray-200 rounded-xl p-6 sm:p-8 hover:shadow-md transition-all duration-200 cursor-pointer hover:border-gray-300">
+              <div key={bank.id} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-6 sm:p-8 hover:shadow-md transition-all duration-200 cursor-pointer hover:border-gray-300 dark:hover:border-gray-600">
                 <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4 sm:gap-8">
                   <div className="flex-1">
                     <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 mb-3">
-                      <h3 className="text-lg sm:text-xl font-semibold text-gray-900">{bank.name}</h3>
+                      <h3 className="text-lg sm:text-xl font-semibold text-gray-900 dark:text-gray-100">{bank.name}</h3>
                       <div className="flex gap-2">
                         <span className={`inline-flex self-start sm:self-auto px-3 py-1 rounded-full text-xs font-medium ${
-                          bank.difficulty === 'easy' ? 'bg-green-100 text-green-700' :
-                          bank.difficulty === 'medium' ? 'bg-yellow-100 text-yellow-700' :
-                          'bg-red-100 text-red-700'
+                          bank.difficulty === 'easy' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400' :
+                          bank.difficulty === 'medium' ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400' :
+                          'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
                         }`}>
                           {bank.difficulty}
                         </span>
                         {bank.id.startsWith('imported_') && (
-                          <span className="inline-flex self-start sm:self-auto px-3 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-700">
+                          <span className="inline-flex self-start sm:self-auto px-3 py-1 rounded-full text-xs font-medium bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400">
                             Imported
                           </span>
                         )}
                       </div>
                     </div>
-                    <p className="text-gray-600 mb-4 sm:mb-6 leading-relaxed text-sm sm:text-base">{bank.description}</p>
+                    <p className="text-gray-600 dark:text-gray-400 mb-4 sm:mb-6 leading-relaxed text-sm sm:text-base">{bank.description}</p>
                     
-                    <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-8 text-xs sm:text-sm text-gray-500">
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-8 text-xs sm:text-sm text-gray-500 dark:text-gray-400">
                       <div className="flex items-center gap-2">
                         <FileText className="w-4 h-4" />
                         <span>{bank.totalQuestions} questions</span>

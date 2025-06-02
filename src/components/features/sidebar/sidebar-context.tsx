@@ -30,13 +30,15 @@ export function SidebarProvider({ children }: { children: ReactNode }) {
   const [collapsed, setCollapsed] = useState(() => {
     // On server-side, assume desktop (will be corrected on client)
     if (typeof window === 'undefined') return false
+    // On mobile, always start collapsed
     return window.innerWidth <= 768
   })
   
   const [sidebarOpen, setSidebarOpen] = useState(() => {
-    // On server-side, assume desktop (will be corrected on client)
-    if (typeof window === 'undefined') return true
-    return window.innerWidth > 768
+    // On server-side, assume closed to prevent flicker
+    if (typeof window === 'undefined') return false
+    // On mobile, always start closed; on desktop, start closed to prevent flicker
+    return false
   })
 
   // Update state when screen size changes
