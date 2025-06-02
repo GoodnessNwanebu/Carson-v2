@@ -367,6 +367,12 @@ Assessment:`;
       shouldTransition: false,
     });
     
+    // Check if response has content before proceeding
+    if (!response || !response.content) {
+      console.error('LLM response missing content:', response);
+      return {quality: fallbackAssessment(userResponse)};
+    }
+    
     try {
       // Try to parse as JSON
       const parsed = JSON.parse(response.content);
@@ -376,7 +382,7 @@ Assessment:`;
       };
     } catch {
       // Fallback to simple parsing
-    const assessment = response.content.toLowerCase().trim();
+      const assessment = response.content.toLowerCase().trim();
     
       if (assessment.includes('excellent')) return {quality: 'excellent'};
       if (assessment.includes('good')) return {quality: 'good'};

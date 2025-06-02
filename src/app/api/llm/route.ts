@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from "next/server"
 import { generatePrompt } from "@/lib/prompts/promptEngine"
 
-const API_KEY = process.env.NEXT_PUBLIC_OPENAI_API_KEY
+const API_KEY = process.env.OPENAI_API_KEY
+console.log("API_KEY", API_KEY)
 const API_URL = "https://api.openai.com/v1/chat/completions"
 
 export async function POST(req: NextRequest) {
   try {
     const session = await req.json()
+    console.log("i ran here")
     console.log("[API/llm] Received session:", session)
     const prompt = generatePrompt(session)
 
@@ -34,7 +36,7 @@ export async function POST(req: NextRequest) {
     })
 
     if (!response.ok) {
-      console.error("[API/llm] OpenAI API call failed:", response.status, response.statusText)
+      console.error("[API/llm] OpenAI APIs call failed:", response.status, response.statusText)
       return NextResponse.json({ error: "OpenAI API call failed" }, { status: 500 })
     }
 

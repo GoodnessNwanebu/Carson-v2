@@ -14,15 +14,15 @@ import { useSession } from "./features/conversation/session-context"
 import { cn } from "@/lib/utils"
 
 export default function CarsonUI() {
+  console.log("CarsonUI")
   // Add viewport meta tag for better mobile behavior
-   console.log("CarsonUI is now ready")
   useEffect(() => {
     // Add viewport meta tag to prevent scaling and improve mobile rendering
     const meta = document.createElement("meta")
     meta.name = "viewport"
     meta.content = "width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content"
     document.head.appendChild(meta)
-
+ 
     // Add class to body to prevent overscroll and optimize touch
     document.body.classList.add("overflow-hidden", "touch-manipulation", "select-none")
     
