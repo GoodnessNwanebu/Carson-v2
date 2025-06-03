@@ -12,29 +12,29 @@ interface TransitionContext {
 const transitionTemplates = {
   // When user shows understanding
   positive: [
-    "Excellent! You've got a solid grasp of {currentSubtopic}. Let's now explore {nextSubtopic}. Are you ready?",
-    "Great work on {currentSubtopic}! I can see you understand it well. Now let's dive into {nextSubtopic}. Shall we?",
-    "You've mastered {currentSubtopic} beautifully! Time to move on to {nextSubtopic}. Ready for the next challenge?",
-    "Perfect understanding of {currentSubtopic}! Let's build on that knowledge with {nextSubtopic}. Are you up for it?",
-    "Outstanding work on {currentSubtopic}! You clearly have a strong foundation. Let's explore {nextSubtopic} next. Ready?"
+    "Good - you've got {currentSubtopic} down. Now let's talk about {nextSubtopic}. Ready?",
+    "Right, {currentSubtopic} makes sense to you. Moving to {nextSubtopic} now.",
+    "You understand {currentSubtopic}. Let's tackle {nextSubtopic} next.",
+    "Solid grasp of {currentSubtopic}. Time for {nextSubtopic}.",
+    "{currentSubtopic} - check. Now for {nextSubtopic}."
   ],
   
   // When user struggled but now understands
   encouraging: [
-    "That's much better! You've worked through {currentSubtopic} really well. Let's now tackle {nextSubtopic}. Ready?",
-    "Great progress on {currentSubtopic}! You stuck with it and got there. Now let's explore {nextSubtopic}. Shall we continue?",
-    "Well done pushing through {currentSubtopic}! Your persistence paid off. Time for {nextSubtopic}. Are you ready?",
-    "Nice work on {currentSubtopic}! I can see the concepts are clicking now. Let's move on to {nextSubtopic}. Shall we?",
-    "Excellent perseverance with {currentSubtopic}! You've really grasped it now. Ready to tackle {nextSubtopic}?"
+    "There we go - {currentSubtopic} clicked for you. Let's try {nextSubtopic} now.",
+    "Good, {currentSubtopic} makes sense now. Moving on to {nextSubtopic}.",
+    "Right, you've got {currentSubtopic} sorted. Next up: {nextSubtopic}.",
+    "{currentSubtopic} is clear now. Let's see {nextSubtopic}.",
+    "Okay, {currentSubtopic} makes sense. Time for {nextSubtopic}."
   ],
   
   // Final subtopic completion
   celebration: [
-    "Outstanding! You've mastered all the key concepts of {topic}! How are you feeling about your understanding now?",
-    "Fantastic work! You've successfully worked through every aspect of {topic}. You should be proud of your progress!",
-    "Excellent! You've demonstrated solid understanding across all areas of {topic}. Well done!",
-    "Incredible job! You've conquered every subtopic of {topic}. Your dedication really shows!",
-    "Brilliant work! You've achieved a comprehensive understanding of {topic}. That's something to celebrate!"
+    "Nice work - you've covered all the key aspects of {topic}. How do you feel about it overall?",
+    "Good job working through {topic}. You've hit all the important points.",
+    "Solid work on {topic}. You've covered the essentials.",
+    "Well done with {topic}. You've tackled all the main areas.",
+    "Good - you've worked through {topic} comprehensively."
   ]
 };
 
@@ -74,10 +74,10 @@ export function generateTransition(context: TransitionContext): string {
 
 export function generateCelebration(topic: string): string {
   const celebrations = [
-    `🎉 Congratulations! You've successfully mastered ${topic}! Your understanding across all the key areas is impressive.`,
-    `🌟 Fantastic achievement! You've worked through every aspect of ${topic} with dedication and skill.`,
-    `🎯 Excellent work! You've demonstrated comprehensive understanding of ${topic}. Well done!`,
-    `🚀 Outstanding! You've conquered ${topic} and should feel proud of your progress and persistence.`
+    `Good work - you've got a solid handle on ${topic} now.`,
+    `Nice job working through ${topic}. You've covered all the important points.`,
+    `Well done with ${topic}. You understand the important concepts.`,
+    `Solid work on ${topic}. You've tackled all the main points.`
   ];
   
   return randomSelect(celebrations);

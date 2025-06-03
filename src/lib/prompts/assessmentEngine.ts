@@ -62,74 +62,74 @@ const warmPrompts = [
 
 // Brief acknowledgments that show Carson is listening
 const acknowledgments = [
-  "Good thinking on that!",
-  "Nice work with that.",
-  "You're right about that.",
-  "That's a solid point.",
-  "I like your reasoning."
+  "Right on.",
+  "Got it.",
+  "I see where you're going.",
+  "Mm-hmm.",
+  "Yeah, that tracks."
 ];
 
 // Context bridges that explain WHY we're asking the next question
 const contextBridges = [
-  "Now let's explore",
-  "Building on that,",
-  "Next, let's look at", 
-  "This connects to",
-  "Following that logic,"
+  "So now I'm curious about",
+  "That brings up",
+  "Which makes me think about", 
+  "Speaking of that,",
+  "That reminds me -"
 ];
 
 // Gentle guidance phrases for cues
 const gentleGuidance = [
   "Think about this:",
-  "Consider this angle:",
-  "Here's a way to think about it:",
-  "Let me guide you:",
-  "Try this perspective:"
+  "Here's something to consider:",
+  "What about this angle:",
+  "Consider this:",
+  "Here's a thought:"
 ];
 
 // Supportive introductions for explanations
 const supportiveIntros = [
-  "Let me help clarify this.",
-  "Here's what's happening:",
-  "The key insight is:",
-  "Think of it this way:",
-  "Here's the connection:"
+  "Okay, so here's what's happening:",
+  "Right, so the deal is:",
+  "Here's the thing:",
+  "So basically:",
+  "The way I think about it:"
 ];
 
 // Encouraging phrases for feedback with connection
 const encouragementsWithConnection = [
-  "Good thinking! That shows you understand",
-  "Exactly right. You're grasping", 
-  "Nice work! You've identified",
-  "That's it! You see how",
-  "Perfect! You've connected"
+  "Exactly - you get",
+  "Right, you're seeing", 
+  "Yeah, you've picked up on",
+  "Bingo - you understand",
+  "Exactly - you're connecting"
 ];
 
 // Celebrations with bridges to next topic
 const celebrationsWithBridge = [
-  "Excellent work! Let's move to",
-  "Great job on that! Now for", 
-  "Well done! Time to explore",
-  "Perfect! Let's tackle",
-  "Nice! Moving on to"
+  "Solid. Now let's talk about",
+  "Perfect. Moving to", 
+  "Good stuff. Next up:",
+  "Nice. Let's tackle",
+  "Alright, now for"
 ];
 
 // Brief encouraging phrases for feedback
 const encouragements = [
-  "Good thinking.",
-  "You're on track.",
-  "Nice work.",
-  "That's right.",
-  "Exactly."
+  "Exactly.",
+  "Right.",
+  "Yep.",
+  "That's it.",
+  "Correct."
 ];
 
 // Brief celebration phrases for transitions
 const celebrations = [
-  "Great! Moving on.",
-  "Perfect! Next topic.", 
-  "Excellent! Let's continue.",
-  "Well done! Next.",
-  "Nice! Moving forward."
+  "Good. Next topic.",
+  "Solid. Moving on.", 
+  "Right. Next.",
+  "Perfect. Continuing.",
+  "Yep. Next up."
 ];
 
 // Concise medical analogies for cues/explanations only
@@ -146,47 +146,47 @@ const dynamicResponses = {
   // When student is confident and doing well
   confident: {
     acknowledgments: [
-      "Nice work!",
-      "Good thinking.",
-      "You're right about that.",
-      "Exactly.",
-      "That's spot on."
+      "Right.",
+      "Yep.",
+      "I see what you mean.",
+      "Makes sense.",
+      "Good point."
     ],
     challenges: [
-      "Here's a trickier one:",
-      "Let's see if you can connect this:",
-      "Now for something more complex:",
-      "What would happen if",
-      "Consider this scenario:"
+      "Okay, now what about this:",
+      "Interesting - so what if",
+      "That's solid. But consider this:",
+      "Right, and how about",
+      "Makes sense. Now here's a curveball:"
     ]
   },
   
   // When student is struggling or confused
   struggling: {
     supportive_intros: [
-      "No worries at all.",
-      "That's totally fine.",
-      "This is tricky stuff.",
-      "Let me help you with this.",
-      "Happens to everyone."
+      "No worries.",
+      "Totally fine.",
+      "This stuff is tricky.",
+      "Yeah, this one's tough.",
+      "Don't sweat it."
     ],
     explanations: [
-      "Think of it this way:",
-      "Here's what's happening:",
-      "The key point is:",
-      "Let me break this down:",
-      "Simply put:"
+      "So basically,",
+      "Here's what's going on:",
+      "The deal is:",
+      "So the way it works is:",
+      "Think about it like this:"
     ]
   },
   
   // When student is partially right
   partially_right: {
     acknowledgments: [
-      "You're on the right track.",
-      "Good start with that.",
-      "Part of that is right.",
-      "You've got the basic idea.",
-      "That's getting there."
+      "You're getting there.",
+      "Part of that's right.",
+      "You've got some of it.",
+      "On the right track.",
+      "That's part of it."
     ]
   }
 };
@@ -251,7 +251,8 @@ export function generateRetentionQuestion(
 function isStruggling(userResponse: string): boolean {
   const response = userResponse.toLowerCase().trim();
   
-  const strugglingPatterns = [
+  // Explicit struggling statements
+  const directStruggling = [
     /^(i don'?t know|not sure|no idea|unsure|i'?m not sure)/,
     /^(confused|lost|stuck)/,
     /^(help|i need help)/,
@@ -262,7 +263,39 @@ function isStruggling(userResponse: string): boolean {
     /difficult/
   ];
   
-  return strugglingPatterns.some(pattern => pattern.test(response));
+  // Deflection patterns - trying to avoid answering
+  const deflectionPatterns = [
+    /^(can you give me a hint|hint|clue)/,
+    /^(what do you think|what would you say)/,
+    /^(i'?m not sure, but|maybe|perhaps)/,
+    /^(could it be|is it|might it be)/,
+    /^(i think it might|it could be|possibly)/
+  ];
+  
+  // Vague/evasive answers that indicate lack of knowledge
+  const vaguePatterns = [
+    /^(it'?s related to|something about|has to do with)/,
+    /^(the|a|some)\s+\w+$/,  // Very short, generic answers like "the kidney"
+    /^(um|uh|well|so)/,      // Filler words indicating uncertainty
+    /^(i think|i believe|i guess)/,
+  ];
+  
+  // Question reversals - fishing for answers
+  const fishingPatterns = [
+    /\?$/,                   // Ends with question mark (answering with a question)
+    /^(is it|does it|can it|would it)/,
+    /right\?$/,              // "It's prerenal, right?"
+    /correct\?$/
+  ];
+  
+  // Very short responses (often indicate confusion)
+  const isTooShort = response.length < 8 && !/^(yes|no|yeah|nope)$/.test(response);
+  
+  return directStruggling.some(pattern => pattern.test(response)) ||
+         deflectionPatterns.some(pattern => pattern.test(response)) ||
+         vaguePatterns.some(pattern => pattern.test(response)) ||
+         fishingPatterns.some(pattern => pattern.test(response)) ||
+         isTooShort;
 }
 
 /**
@@ -332,6 +365,11 @@ async function assessWithLLM(
     return {quality: 'confused'};
   }
 
+  // Validate inputs
+  if (!userResponse?.trim() || userResponse.trim().length < 2) {
+    return {quality: 'confused'};
+  }
+
   const assessmentPrompt = `You are a medical education expert evaluating a student's response. Assess the quality of their answer and identify specific gaps.
 
 **Topic**: ${topic}
@@ -367,20 +405,28 @@ Assessment:`;
       shouldTransition: false,
     });
     
-    // Check if response has content before proceeding
-    if (!response || !response.content) {
-      console.error('LLM response missing content:', response);
+    // Validate response structure
+    if (!response || !response.content || typeof response.content !== 'string') {
+      console.error('LLM assessment: Invalid response structure:', response);
       return {quality: fallbackAssessment(userResponse)};
     }
     
     try {
       // Try to parse as JSON
       const parsed = JSON.parse(response.content);
+      
+      // Validate the parsed structure
+      const validQualities = ['excellent', 'good', 'partial', 'incorrect', 'confused'];
+      if (!parsed.quality || !validQualities.includes(parsed.quality)) {
+        console.error('LLM assessment: Invalid quality value:', parsed.quality);
+        return {quality: fallbackAssessment(userResponse)};
+      }
+      
       return {
         quality: parsed.quality as AnswerQuality,
-        specificGaps: parsed.specificGaps
+        specificGaps: parsed.specificGaps || undefined
       };
-    } catch {
+    } catch (parseError) {
       // Fallback to simple parsing
       const assessment = response.content.toLowerCase().trim();
     
@@ -390,10 +436,12 @@ Assessment:`;
       if (assessment.includes('incorrect')) return {quality: 'incorrect'};
       if (assessment.includes('confused')) return {quality: 'confused'};
       
-      return {quality: 'partial'};
+      // If we can't parse anything meaningful, use fallback
+      console.warn('LLM assessment: Could not parse response, using fallback');
+      return {quality: fallbackAssessment(userResponse)};
     }
   } catch (error) {
-    console.error('LLM assessment failed, falling back to simple heuristics:', error);
+    console.error('LLM assessment failed, falling back to heuristics:', error);
     return {quality: fallbackAssessment(userResponse)};
   }
 }
@@ -402,13 +450,38 @@ Assessment:`;
  * Fallback assessment for when LLM assessment fails
  */
 function fallbackAssessment(userResponse: string): AnswerQuality {
-  const length = userResponse.length;
+  const response = userResponse.toLowerCase().trim();
+  const length = response.length;
   
-  if (length < 10) return 'confused';
-  if (length < 20) return 'incorrect';
-  if (length < 50) return 'partial';
-  if (length < 100) return 'good';
-  return 'excellent';
+  // Check for obvious confusion signals first
+  if (isStruggling(response)) {
+    return 'confused';
+  }
+  
+  // Very short responses that aren't obvious answers
+  if (length < 5 && !/^(yes|no|yeah|nope|ok)$/.test(response)) {
+    return 'confused';
+  }
+  
+  // Look for medical terminology or structured thinking
+  const medicalTerms = ['pathophysiology', 'mechanism', 'diagnosis', 'treatment', 'patient', 'clinical', 
+                       'syndrome', 'disease', 'condition', 'symptoms', 'signs', 'etiology', 'prognosis'];
+  const hasMedicalTerms = medicalTerms.some(term => response.includes(term));
+  
+  // Look for structured medical reasoning
+  const reasoningPatterns = ['because', 'since', 'due to', 'caused by', 'leads to', 'results in', 'indicates'];
+  const hasReasoning = reasoningPatterns.some(pattern => response.includes(pattern));
+  
+  // More intelligent assessment based on content quality
+  if (hasMedicalTerms && hasReasoning && length > 30) {
+    return 'good';
+  } else if (hasMedicalTerms || hasReasoning) {
+    return 'partial';
+  } else if (length > 20) {
+    return 'partial';
+  } else {
+    return 'incorrect';
+  }
 }
 
 /**
@@ -480,28 +553,15 @@ export async function assessUserResponse(
   } as AssessmentResult & { interactionType: InteractionType };
 }
 
+// **ENHANCED**: Update the escape valve logic to provide supportive transitions
 function determineNextAction(answerQuality: AnswerQuality, context: CarsonSessionContext): NextAction {
   const { currentQuestionType, questionsAskedInCurrentSubtopic, correctAnswersInCurrentSubtopic, currentSubtopicState } = context;
   
-  // **CRITICAL FIX**: Never complete subtopic if student is struggling or confused
-  if (answerQuality === 'confused' || answerQuality === 'incorrect') {
-    return 'explain'; // Always explain first for struggling students
-  }
-  
-  // **MASTERY REQUIREMENT**: Need minimum 2 correct answers AND 3+ questions for completion
+  // **SIMPLIFIED**: More reasonable requirements for moving forward
   const hasMinimumCorrectAnswers = correctAnswersInCurrentSubtopic >= 2;
-  const hasMinimumQuestions = questionsAskedInCurrentSubtopic >= 3;
-  const meetsMasteryThreshold = hasMinimumCorrectAnswers && hasMinimumQuestions;
-  
-  // Check if Carson has been giving positive feedback indicating mastery
-  const lastCarsonMessage = context.history
-    .filter(msg => msg.role === "assistant")
-    .slice(-1)[0]?.content || "";
-  
-  const carsonIndicatedMastery = lastCarsonMessage.toLowerCase().includes('mastered') ||
-                               lastCarsonMessage.toLowerCase().includes('excellent') ||
-                               lastCarsonMessage.toLowerCase().includes('wonderful job') ||
-                               lastCarsonMessage.toLowerCase().includes('beautifully');
+  const hasAskedEnoughQuestions = questionsAskedInCurrentSubtopic >= 2;
+  const hasGoodSuccessRate = correctAnswersInCurrentSubtopic / Math.max(questionsAskedInCurrentSubtopic, 1) >= 0.6;
+  const meetsMasteryThreshold = hasMinimumCorrectAnswers && hasAskedEnoughQuestions && hasGoodSuccessRate;
   
   switch (currentSubtopicState) {
     case 'assessing':
@@ -509,8 +569,8 @@ function determineNextAction(answerQuality: AnswerQuality, context: CarsonSessio
         switch (answerQuality) {
           case 'excellent':
           case 'good':
-            // **ENHANCED**: Require demonstration of mastery before completion
-            if (meetsMasteryThreshold && carsonIndicatedMastery && questionsAskedInCurrentSubtopic >= 3) {
+            // If they clearly understand, let them advance
+            if (meetsMasteryThreshold) {
               return 'complete_subtopic';
             } else if (questionsAskedInCurrentSubtopic < 2) {
               return 'continue_parent'; // Need more assessment
@@ -518,27 +578,29 @@ function determineNextAction(answerQuality: AnswerQuality, context: CarsonSessio
               return 'ask_child'; // Test depth with child questions
             }
           case 'partial':
-            // For partial answers, give more opportunities to demonstrate knowledge
-            if (questionsAskedInCurrentSubtopic >= 4 && correctAnswersInCurrentSubtopic >= 1) {
-              return 'give_cue'; // Provide guidance after multiple attempts
+            // For partial answers, give some opportunities but don't trap them
+            if (meetsMasteryThreshold) {
+              return 'complete_subtopic';
+            } else if (questionsAskedInCurrentSubtopic >= 3) {
+              return 'give_cue'; // Provide guidance after a few attempts
             }
-            return 'continue_parent'; // Keep exploring knowledge
+            return 'continue_parent';
+          default: // 'confused' and 'incorrect'
+            // When confused, just explain - no counting attempts
+            return 'explain';
         }
       } else if (currentQuestionType === 'child') {
         switch (answerQuality) {
           case 'excellent':
           case 'good':
-            // **STRICTER**: Child questions require higher standards for completion
-            if (meetsMasteryThreshold && questionsAskedInCurrentSubtopic >= 4) {
+            // Child questions show deep understanding
+            if (meetsMasteryThreshold) {
               return 'complete_subtopic';
             }
             return 'continue_parent'; // Continue exploring
-          case 'partial':
-            // **ENHANCED**: Don't complete on partial child answers
-            if (questionsAskedInCurrentSubtopic >= 5) {
-              return 'give_cue'; // Provide more targeted help
-            }
-            return 'continue_parent'; // Keep working
+          default: // 'partial', 'confused', 'incorrect'
+            // Don't trap students in child questions - fall back to parent level
+            return 'continue_parent';
         }
       }
       break;
@@ -551,17 +613,11 @@ function determineNextAction(answerQuality: AnswerQuality, context: CarsonSessio
       switch (answerQuality) {
         case 'excellent':
         case 'good':
-          // **ENHANCED**: Even after explanation, need to prove understanding
-          if (meetsMasteryThreshold && questionsAskedInCurrentSubtopic >= 3) {
-            return 'complete_subtopic';
-          }
-          return 'continue_parent'; // Verify understanding with more questions
-        case 'partial':
-          // **STRICTER**: Partial understanding after explanation needs more work
-          if (questionsAskedInCurrentSubtopic >= 6) {
-            return 'complete_subtopic'; // Eventually allow progression if they've worked hard
-          }
-          return 'continue_parent'; // Keep reinforcing
+          // Good understanding after explanation = ready to move
+          return 'complete_subtopic';
+        default:
+          // If still confused after explanation, just move on
+          return 'complete_subtopic';
       }
       break;
   }
@@ -587,7 +643,7 @@ function generateReasoningForAssessment(
         answerQuality: answerQuality,
         isStruggling: answerQuality === 'confused' || answerQuality === 'incorrect',
         specificGaps,
-        topic: context.topic // Pass topic for advanced questions
+        topic: context.topic
       });
 
     case 'ask_child':
@@ -597,7 +653,7 @@ function generateReasoningForAssessment(
         answerQuality: answerQuality,
         isStruggling: false,
         specificGaps,
-        topic: context.topic // Pass topic for advanced questions
+        topic: context.topic
       });
 
     case 'give_cue':
@@ -606,7 +662,7 @@ function generateReasoningForAssessment(
         answerQuality: answerQuality,
         isStruggling: answerQuality === 'confused' || answerQuality === 'incorrect',
         specificGaps,
-        topic: context.topic // Pass topic for advanced questions
+        topic: context.topic
       });
 
     case 'explain':
@@ -615,7 +671,7 @@ function generateReasoningForAssessment(
         answerQuality: answerQuality,
         isStruggling: true,
         specificGaps,
-        topic: context.topic // Pass topic for advanced questions
+        topic: context.topic
       });
 
     case 'check_understanding':
@@ -624,7 +680,7 @@ function generateReasoningForAssessment(
         answerQuality: answerQuality,
         isStruggling: false,
         specificGaps,
-        topic: context.topic // Pass topic for advanced questions
+        topic: context.topic
       });
 
     case 'complete_subtopic':
@@ -633,17 +689,11 @@ function generateReasoningForAssessment(
         answerQuality: answerQuality,
         isStruggling: false,
         specificGaps,
-        topic: context.topic // Pass topic for advanced questions
+        topic: context.topic
       });
 
     default:
-      return generateContextualResponse('feedback', {
-        subtopic: subtopicTitle,
-        answerQuality: answerQuality,
-        isStruggling: false,
-        specificGaps,
-        topic: context.topic // Pass topic for advanced questions
-      });
+      return generateOriginalResponse(nextAction as ResponseType, { subtopic: subtopicTitle });
   }
 }
 
@@ -655,7 +705,7 @@ export function updateSessionAfterAssessment(
     questionsAskedInCurrentSubtopic: context.questionsAskedInCurrentSubtopic + 1
   };
   
-  // **CRITICAL FIX**: Increment correctAnswersInCurrentSubtopic for good/excellent answers
+  // Increment correctAnswersInCurrentSubtopic for good/excellent answers
   const isCorrectAnswer = ['excellent', 'good'].includes(assessment.answerQuality);
   if (isCorrectAnswer) {
     updates.correctAnswersInCurrentSubtopic = context.correctAnswersInCurrentSubtopic + 1;
@@ -693,7 +743,7 @@ export function updateSessionAfterAssessment(
       break;
   }
   
-  // Update subtopic-level tracking to keep both counters in sync
+  // Update subtopic-level tracking
   const shouldMarkNeedsExplanation = ['incorrect', 'confused'].includes(assessment.answerQuality);
   const currentSubtopicIndex = context.currentSubtopicIndex;
   const updatedSubtopics = [...context.subtopics];
@@ -703,7 +753,6 @@ export function updateSessionAfterAssessment(
       ...updatedSubtopics[currentSubtopicIndex],
       needsExplanation: shouldMarkNeedsExplanation || updatedSubtopics[currentSubtopicIndex].needsExplanation,
       questionsAsked: updatedSubtopics[currentSubtopicIndex].questionsAsked + 1,
-      // **CRITICAL FIX**: Also update the subtopic-level correctAnswers counter
       correctAnswers: isCorrectAnswer ? 
         updatedSubtopics[currentSubtopicIndex].correctAnswers + 1 : 
         updatedSubtopics[currentSubtopicIndex].correctAnswers
@@ -1138,18 +1187,18 @@ export function generateMetacognitiveQuestion(
     case 'confused':
     case 'incorrect':
       const strugglingQuestions = [
-        `I can see this is challenging. What specifically feels most confusing about ${currentSubtopic.title}?`,
-        `Let's step back - what part of ${currentSubtopic.title} do you feel confident about, and what part is tricky?`,
-        `No worries at all. What would help you feel more confident with ${currentSubtopic.title}? Examples? Different explanation?`,
-        `This is tough stuff. What's your biggest question about ${currentSubtopic.title} right now?`
+        `I can see ${currentSubtopic.title} is tricky. What specifically feels confusing about it?`,
+        `Let's step back - what part of ${currentSubtopic.title} makes sense to you, and what part doesn't?`,
+        `No problem. What would help you understand ${currentSubtopic.title} better? Examples? Different explanation?`,
+        `This stuff is tough. What's your biggest question about ${currentSubtopic.title}?`
       ];
       return strugglingQuestions[Math.floor(Math.random() * strugglingQuestions.length)];
       
     case 'partial':
       const partialQuestions = [
-        `You've got some good points there. What do you think might be missing from your answer?`,
-        `Good start! What other aspects of ${currentSubtopic.title} do you think we should explore?`,
-        `Nice work so far. If you were teaching this to a classmate, what else would you want to mention?`,
+        `You've got some good points. What do you think might be missing?`,
+        `Good start! What other aspects of ${currentSubtopic.title} should we cover?`,
+        `Right so far. If you were teaching this to a classmate, what else would you mention?`,
         `You're on track. What questions do you still have about ${currentSubtopic.title}?`
       ];
       return partialQuestions[Math.floor(Math.random() * partialQuestions.length)];
@@ -1157,10 +1206,10 @@ export function generateMetacognitiveQuestion(
     case 'good':
     case 'excellent':
       const reflectionQuestions = [
-        `Great work! How confident do you feel about applying this knowledge of ${currentSubtopic.title} in real clinical situations?`,
-        `Excellent! What's one thing about ${currentSubtopic.title} that surprised you or changed how you think about it?`,
-        `Nice! If you had to identify one key takeaway about ${currentSubtopic.title}, what would it be?`,
-        `Well done! What connections do you see between ${currentSubtopic.title} and other medical concepts you know?`
+        `Good work. How confident do you feel about using this ${currentSubtopic.title} knowledge with real patients?`,
+        `Nice. What's one thing about ${currentSubtopic.title} that surprised you or changed how you think about it?`,
+        `Right. If you had to identify one key takeaway about ${currentSubtopic.title}, what would it be?`,
+        `Solid. What connections do you see between ${currentSubtopic.title} and other medical concepts you know?`
       ];
       return reflectionQuestions[Math.floor(Math.random() * reflectionQuestions.length)];
   }
@@ -1226,7 +1275,7 @@ export function classifyInteraction(
       type: 'emotional_support',
       confidence: 0.9,
       requiresAssessment: false,
-      suggestedResponse: generateEmotionalSupport(response)
+      suggestedResponse: generateConfusionSupport(response, context.topic, context.subtopics[context.currentSubtopicIndex]?.title)
     };
   }
   
@@ -1346,59 +1395,149 @@ export function classifyInteraction(
 }
 
 // Helper functions for generating responses
-function generateEmotionalSupport(response: string): string {
-  const supportResponses = [
-    "I can see this is challenging for you, and that's completely normal. Medical topics can be complex, but you're doing better than you think. Let's break this down into smaller, more manageable pieces.",
-    "It's okay to feel overwhelmed - this shows you care about learning it properly. Every medical student goes through this. Let's slow down and approach this differently.",
-    "I hear your frustration, and I want you to know that struggling with difficult concepts is part of the learning process. You're not alone in this. Let's find a way that works better for you.",
-    "These feelings are totally valid. Medical education is demanding, and it's okay to find some topics more challenging than others. Let's take a step back and find your confidence again."
-  ];
-  return supportResponses[Math.floor(Math.random() * supportResponses.length)];
+function generateConfusionSupport(userResponse: string, topic: string, subtopic?: string): string {
+  const response = userResponse.toLowerCase().trim();
+  
+  // More precise detection that aligns with our isStruggling patterns
+  let supportType = 'general';
+  let confidenceLevel = 'low'; // low, partial, seeking_validation
+  
+  // Direct struggling - lowest confidence, needs most support
+  if (/^(i don'?t know|not sure|no idea|unsure|i'?m not sure)/.test(response) ||
+      /^(confused|lost|stuck)/.test(response) ||
+      /don'?t understand|not following|makes no sense/.test(response)) {
+    supportType = 'completely_lost';
+    confidenceLevel = 'low';
+  }
+  
+  // Deflection patterns - partial knowledge, seeking help
+  else if (/^(can you give me a hint|hint|clue)/.test(response) ||
+           /^(help|i need help)/.test(response)) {
+    supportType = 'needs_guidance';
+    confidenceLevel = 'partial';
+  }
+  
+  // Fishing patterns - has some knowledge, seeking validation
+  else if (/\?$/.test(response) || // Ends with question mark
+           /^(is it|could it be|might it be|does it|can it|would it)/.test(response) ||
+           /right\?$|correct\?$/.test(response)) {
+    supportType = 'seeking_validation';
+    confidenceLevel = 'seeking_validation';
+  }
+  
+  // Uncertainty markers - partial knowledge but unsure
+  else if (/^(i'?m not sure, but|maybe|perhaps)/.test(response) ||
+           /^(i think it might|it could be|possibly)/.test(response) ||
+           /^(i think|i believe|i guess)/.test(response)) {
+    supportType = 'uncertain_knowledge';
+    confidenceLevel = 'partial';
+  }
+  
+  // Vague responses - some understanding but lack specifics
+  else if (/^(it'?s related to|something about|has to do with)/.test(response) ||
+           /^(the|a|some)\s+\w+$/.test(response) ||
+           /^(um|uh|well|so)/.test(response)) {
+    supportType = 'vague_knowledge';
+    confidenceLevel = 'partial';
+  }
+  
+  // Very short responses - likely confused
+  else if (response.length < 8 && !/^(yes|no|yeah|nope)$/.test(response)) {
+    supportType = 'minimal_response';
+    confidenceLevel = 'low';
+  }
+  
+  const supportResponses = {
+    completely_lost: [
+      `Totally fair - ${subtopic || topic} is genuinely complex stuff. No one expects you to just know this.`,
+      `Good to be honest about it. ${subtopic || topic} trips up a lot of people initially.`,
+      `Yeah, ${subtopic || topic} isn't intuitive. Let me walk you through it.`
+    ],
+    
+    seeking_validation: [
+      `You're thinking about it the right way. That's exactly how you should approach ${subtopic || topic}.`,
+      `Good instinct with that question. You're working through ${subtopic || topic} logically.`,
+      `Right approach - asking the right questions about ${subtopic || topic}.`
+    ],
+    
+    uncertain_knowledge: [
+      `You're in the right ballpark with ${subtopic || topic}. Let me help you pin it down.`,
+      `Close - you've got pieces of ${subtopic || topic} but let me fill in the gaps.`,
+      `You're thinking about ${subtopic || topic} correctly, just need to connect the dots.`
+    ],
+    
+    needs_guidance: [
+      `Sure. So with ${subtopic || topic}, the key thing to remember is this.`,
+      `Absolutely. Here's how I think about ${subtopic || topic}.`,
+      `Of course. ${subtopic || topic} basically works like this.`
+    ],
+    
+    vague_knowledge: [
+      `Right general area. Now let's get specific about how ${subtopic || topic} actually works.`,
+      `Good connection. Let me help you get more precise about ${subtopic || topic}.`,
+      `You've got the broad concept. Now for the specifics of ${subtopic || topic}.`
+    ],
+    
+    minimal_response: [
+      `No problem. ${subtopic || topic} can be a lot to process at first.`,
+      `Fair enough. Let me give you the key points about ${subtopic || topic}.`,
+      `All good. Here's what you need to know about ${subtopic || topic}.`
+    ],
+    
+    general: [
+      `Alright, so ${subtopic || topic} is basically this.`,
+      `Okay, let me explain ${subtopic || topic}.`,
+      `Right, so here's how ${subtopic || topic} works.`
+    ]
+  };
+  
+  const responses = supportResponses[supportType as keyof typeof supportResponses];
+  return responses[Math.floor(Math.random() * responses.length)];
 }
 
 function generateMotivationalResponse(context: CarsonSessionContext): string {
   const currentTopic = context.topic || "this topic";
-  return `I understand this might feel overwhelming, but ${currentTopic} is actually one of those topics that really clicks once you get the fundamentals. You've already shown you understand some key concepts. What if we approach this differently - maybe start with a real patient scenario that shows why this matters?`;
+  return `Look, ${currentTopic} can definitely feel like a lot at first. But here's the thing - you've already shown you understand some key concepts. Want to try a different angle? Maybe we can look at this through a real case that shows why this stuff actually matters.`;
 }
 
 function generatePersonalResponse(): string {
   const responses = [
-    "I'm Carson, your AI medical tutor. I'm here to help you master medical concepts through personalized learning. I'm not a real doctor, but I'm designed by medical educators to guide your learning effectively.",
-    "Thanks for asking! I'm an AI tutor focused on helping you understand medical concepts deeply. While I'm not human, I'm here to provide you with the same kind of supportive guidance you'd get from a great clinical mentor.",
-    "I appreciate the personal touch! I'm Carson, an AI designed to be your warm, supportive learning companion for medical education. My goal is to help you build real clinical reasoning skills."
+    "I'm Carson - just an AI that's been trained to think like a doctor. Not actually human, but I've been designed to help you work through medical concepts the way a good attending would.",
+    "Thanks for asking! I'm an AI, but I've been built to approach medical education like a real physician mentor would. My goal is helping you think through cases and concepts.",
+    "I'm Carson - an AI designed to work with medical students. While I'm not human, I try to approach teaching the way good doctors do - direct, honest, and focused on helping you understand."
   ];
   return responses[Math.floor(Math.random() * responses.length)];
 }
 
 function generateBoundaryResponse(): string {
-  return "I understand you might be curious about your own health, but I can't provide personal medical advice. I'm designed to help with medical education and learning. If you have health concerns, please speak with a qualified healthcare provider. Let's get back to exploring the fascinating world of medical knowledge together!";
+  return "I can't give you personal medical advice - that's not what I'm here for. I'm designed for medical education and learning. If you've got health concerns, definitely talk to a real doctor. But I'm happy to help you understand medical concepts and work through cases!";
 }
 
 function generateAuthorityResponse(): string {
   const responses = [
-    "That's a great point to bring up! Different sources sometimes present information differently. Medical knowledge evolves, and there can be variations in how concepts are taught. What specifically did your professor/textbook say? Let's explore this together and understand the different perspectives.",
-    "I appreciate you challenging the information - that's exactly the kind of critical thinking that makes a great clinician! Let's dig into this disagreement. Can you tell me more about the alternative explanation you've heard?",
-    "That's wonderful that you're thinking critically! Medicine often has nuances and different approaches. What you've learned elsewhere might be focusing on a different aspect. Let's compare the perspectives and see how they fit together."
+    "Fair point - medicine definitely has areas where sources disagree or approaches differ. What specifically did your professor say? Let's compare the different perspectives and see where they align or diverge.",
+    "Good that you're thinking critically about this. Different sources sometimes emphasize different aspects. Tell me more about what you heard elsewhere - let's work through the differences.",
+    "Interesting - that's actually a good sign that you're engaging with multiple sources. What was the alternative take? Medicine often has nuances worth exploring."
   ];
   return responses[Math.floor(Math.random() * responses.length)];
 }
 
 function generateMetaLearningResponse(context: CarsonSessionContext): string {
   const responses = [
-    "Great question about learning strategy! For topics like this, I find that connecting concepts to real patient scenarios helps with retention. Active recall - testing yourself rather than just reviewing - is also powerful. What learning methods have worked best for you so far?",
-    "Study strategies are so important! For medical topics, I recommend the 'teach-back' method - if you can explain it simply to someone else, you truly understand it. Also, spaced repetition really helps with long-term retention. Let's use some of these techniques as we continue.",
-    "I love that you're thinking about how to learn effectively! For complex medical topics, building conceptual frameworks first, then adding details, tends to work well. We can practice that approach together as we work through this material."
+    "Good question about study approach. For this kind of material, I'd focus on understanding mechanisms first, then building up to applications. Active recall - testing yourself rather than just reading - tends to stick better. What's been working for you so far?",
+    "Smart to think about learning strategy. For medical topics, connecting to real cases usually helps retention. Also, trying to explain concepts to someone else is a great test of understanding. Want to try that approach with what we're covering?",
+    "That's actually really important to think about. For complex medical concepts, building frameworks first, then adding details, usually works well. We can practice that approach together as we go through this."
   ];
   return responses[Math.floor(Math.random() * responses.length)];
 }
 
 function generateTechnicalResponse(): string {
-  return "I'm sorry you're having technical difficulties! For the best learning experience, you might want to check your internet connection or try refreshing the page. If voice features aren't working, you can always type your responses. The important thing is that we can continue learning together. Let's keep going with whatever works best for you!";
+  return "Sorry you're having tech issues. Try refreshing or checking your connection if things aren't working smoothly. Voice not working? No problem - just type. The important thing is we can keep going with whatever works best for you.";
 }
 
 function generateRedirectionResponse(context: CarsonSessionContext): string {
   const currentTopic = context.topic || "our current topic";
-  return `That's an interesting question! I can see how that connects to medical thinking. Right now we're focused on mastering ${currentTopic}, and I want to make sure you get the most out of our time together. Once we've built a solid foundation here, we can definitely explore other topics. Let's get back to where we were - I think you were doing really well!`;
+  return `Interesting question, and I can see how that connects to medical thinking. Right now we're working through ${currentTopic}, and I want to make sure you really get this before we move on. Once we've got a solid foundation here, we can definitely explore other areas. Sound good?`;
 }
 
 function isOffTopicMedical(response: string, currentTopic?: string): boolean {
@@ -1411,4 +1550,16 @@ function isOffTopicMedical(response: string, currentTopic?: string): boolean {
   );
   
   return containsMedicalTerms && !mentionsCurrentTopic && response.length > 20;
+}
+
+function generateEmotionalSupport(response: string): string {
+  const supportMessages = [
+    "That's completely normal - this is exactly what learning looks like. No one expects you to know everything, especially not complex medical concepts.",
+    "Perfect honesty! That's actually the best place to start learning from. Every attending physician has been exactly where you are right now.",
+    "Good for being upfront about that. It's way better to say 'I don't know' than to guess - that's real doctor thinking.",
+    "No worries at all. These concepts are genuinely challenging, and admitting when you don't know something is a strength, not a weakness.",
+    "Totally fine - this is why we're here! Not knowing something just means we get to learn it together. That's the whole point."
+  ];
+  
+  return supportMessages[Math.floor(Math.random() * supportMessages.length)];
 } 

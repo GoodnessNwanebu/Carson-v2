@@ -1,14 +1,36 @@
 "use client"
 
+import { useState, useEffect } from "react"
 import { useKnowledgeMap, type TopicStatus } from "./knowledge-map-context"
 import { cn } from "@/lib/utils"
-import { X, Map, CheckCircle, AlertCircle, HelpCircle, Clock } from "lucide-react"
-import { useSidebarState } from "../sidebar/sidebar-context"
+import { Map, CheckCircle, AlertCircle, HelpCircle, Clock } from "lucide-react"
 import { SlideInAnimation } from "./knowledge-map-animations"
+
+// Custom hook for mobile detection
+function useMobile() {
+  const [isMobile, setIsMobile] = useState(false)
+
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 768)
+    }
+    
+    // Check on mount
+    checkMobile()
+    
+    // Add event listener
+    window.addEventListener('resize', checkMobile)
+    
+    // Cleanup
+    return () => window.removeEventListener('resize', checkMobile)
+  }, [])
+
+  return isMobile
+}
 
 export function KnowledgeMapPanel() {
   const { topics, isMapOpen, toggleMap, currentTopicName, isLoading, currentSubtopicIndex } = useKnowledgeMap()
-  const { isMobile } = useSidebarState()
+  const isMobile = useMobile()
 
   // Get status icon
   const getStatusIcon = (status: TopicStatus) => {
@@ -52,13 +74,6 @@ export function KnowledgeMapPanel() {
             <h2 className="text-lg font-semibold text-gray-900">Knowledge Map</h2>
             <p className="text-sm text-gray-600">Track your learning progress</p>
           </div>
-          <button
-            onClick={toggleMap}
-            className="p-1 rounded-md hover:bg-gray-200 transition-colors"
-            aria-label="Close knowledge map"
-          >
-            <X size={20} className="text-gray-700" />
-          </button>
         </div>
 
         {/* Topics list */}

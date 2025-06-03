@@ -5,8 +5,9 @@ export type SubtopicStatus = 'unassessed' | UnderstandingLevel;
 
 export interface Message {
   id: string;
-  role: "user" | "assistant";
+  role: 'user' | 'assistant' | 'system';
   content: string;
+  timestamp?: number;
 }
 
 export interface Subtopic {
@@ -24,10 +25,20 @@ export interface CarsonSessionContext {
   topic: string;
   subtopics: Subtopic[];
   currentSubtopicIndex: number;
-  history: Message[];
+  
+  // Current subtopic state tracking
+  currentSubtopicState: 'assessing' | 'explaining' | 'checking' | 'complete';
   currentQuestionType: 'parent' | 'child' | 'checkin';
   questionsAskedInCurrentSubtopic: number;
   correctAnswersInCurrentSubtopic: number;
-  currentSubtopicState: 'assessing' | 'explaining' | 'checking' | 'complete';
+  
+  // Transition handling
   shouldTransition: boolean;
+  isComplete: boolean;
+  
+  // Assessment tracking
+  lastAssessment?: any; // Will be properly typed when assessment system is imported
+  
+  // Message history
+  history: Message[];
 } 

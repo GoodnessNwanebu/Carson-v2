@@ -1,6 +1,6 @@
 "use client"
 
-import { createContext, useContext, useState, useEffect, type ReactNode } from "react"
+import React, { createContext, useContext, useState, useEffect, ReactNode } from "react"
 import { CarsonSessionContext, Message } from "@/lib/prompts/carsonTypes"
 import { v4 as uuidv4 } from 'uuid';
 
@@ -14,9 +14,10 @@ interface SessionContextType {
   checkSubtopicCompletion: (subtopicIndex: number) => boolean
   isSessionComplete: () => boolean
   clearSession: () => void
+  resetSession: () => void
 }
 
-const SessionContext = createContext<SessionContextType | undefined>(undefined)
+const SessionContext = createContext<SessionContextType | null>(null)
 
 export function useSession() {
   const context = useContext(SessionContext)
@@ -53,6 +54,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       correctAnswersInCurrentSubtopic: 0,
       currentSubtopicState: 'assessing',
       shouldTransition: false,
+      isComplete: false,
     })
   }
 
@@ -143,6 +145,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem('carsonSession')
   }
 
+  const resetSession = () => {
+    clearSession()
+    startSession(session?.topic || '', session?.sessionId)
+  }
+
   return (
     <SessionContext.Provider 
       value={{ 
@@ -154,7 +161,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         updateSubtopicStatus,
         checkSubtopicCompletion,
         isSessionComplete,
-        clearSession
+        clearSession,
+        resetSession
       }}
     >
       {children}

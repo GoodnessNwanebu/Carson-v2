@@ -1,5 +1,5 @@
-import { CarsonMainContent } from "@/components/carson-main-content"
+import CarsonUI from "@/components/carson-ui"
 
 export default function Page() {
-  return <CarsonMainContent />
+  return <CarsonUI />
 }

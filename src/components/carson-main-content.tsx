@@ -4,129 +4,87 @@ import type React from "react"
 import { useState, useEffect, useRef } from "react"
 import { Conversation } from "./features/conversation/conversation"
 import { PenLine, GraduationCap, Code, Coffee, Sparkles, Plus, SendHorizonal, Telescope, Mic, MicOff, Camera, FileText, Image } from "lucide-react"
-import { useSidebarState } from "./features/sidebar/sidebar-context"
 import { cn } from "@/lib/utils"
 
-export function CarsonMainContent() {
-  const [query, setQuery] = useState("")
-  const [deepDive, setDeepDive] = useState(false)
-  const [isLoading, setIsLoading] = useState(false)
-  const [inConversation, setInConversation] = useState(false)
-  const [isTransitioning, setIsTransitioning] = useState(false)
-  const [initialTopic, setInitialTopic] = useState<string | null>(null)
-  const inputRef = useRef<HTMLTextAreaElement>(null)
-  const { isMobile } = useSidebarState()
+// Custom hook for mobile detection
+function useMobile() {
+  const [isMobile, setIsMobile] = useState(false)
+
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 768)
+    }
+    
+    // Check on mount
+    checkMobile()
+    
+    // Add event listener
+    window.addEventListener('resize', checkMobile)
+    
+    // Cleanup
+    return () => window.removeEventListener('resize', checkMobile)
+  }, [])
+
+  return isMobile
+}
+
+interface CarsonMainContentProps {
+  inConversation: boolean
+  setInConversation: (value: boolean) => void
+  query: string
+  setQuery: (value: string) => void
+  deepDive: boolean
+  setDeepDive: (value: boolean) => void
+  isLoading: boolean
+  setIsLoading: (value: boolean) => void
+  isTransitioning: boolean
+  setIsTransitioning: (value: boolean) => void
+  initialTopic: string | null
+  setInitialTopic: (value: string | null) => void
+  inputRef: React.RefObject<HTMLTextAreaElement | null>
+  handleSubmit: (e: React.FormEvent) => void
+  handleNewChat: () => void
+  isRecording: boolean
+  mediaRecorder: MediaRecorder | null
+  audioChunks: Blob[]
+  isTranscribing: boolean
+  showAttachmentModal: boolean
+  setShowAttachmentModal: (value: boolean) => void
+  handleAttachmentOption: (option: 'file' | 'camera' | 'photos') => void
+  toggleVoiceRecording: () => void
+  conversationVoiceCallback: React.MutableRefObject<((transcript: string) => void) | null>
+}
+
+export function CarsonMainContent({
+  inConversation,
+  setInConversation,
+  query,
+  setQuery,
+  deepDive,
+  setDeepDive,
+  isLoading,
+  setIsLoading,
+  isTransitioning,
+  setIsTransitioning,
+  initialTopic,
+  setInitialTopic,
+  inputRef,
+  handleSubmit,
+  handleNewChat,
+  isRecording,
+  mediaRecorder,
+  audioChunks,
+  isTranscribing,
+  showAttachmentModal,
+  setShowAttachmentModal,
+  handleAttachmentOption,
+  toggleVoiceRecording,
+  conversationVoiceCallback,
+}: CarsonMainContentProps) {
+  const isMobile = useMobile()
   const [contentWidth, setContentWidth] = useState("max-w-2xl")
 
-  // Voice-to-text state (Whisper-based)
-  const [isRecording, setIsRecording] = useState(false);
-  const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
-  const [audioChunks, setAudioChunks] = useState<Blob[]>([]);
-  const [isTranscribing, setIsTranscribing] = useState(false);
-
-  // Attachment modal state
-  const [showAttachmentModal, setShowAttachmentModal] = useState(false);
-
-  // Initialize audio recording for initial input only when user clicks microphone
-  const initializeRecording = async () => {
-    if (mediaRecorder) return; // Already initialized
-    
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const recorder = new MediaRecorder(stream, {
-        mimeType: 'audio/webm;codecs=opus' // Good compression, supported by OpenAI
-      });
-      
-      recorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          setAudioChunks(prev => [...prev, event.data]);
-        }
-      };
-
-      recorder.onstop = async () => {
-        setIsRecording(false);
-        // Will handle transcription in the toggle function
-      };
-
-      setMediaRecorder(recorder);
-      return true; // Success
-    } catch (error) {
-      console.error('Error accessing microphone:', error);
-      return false; // Failed
-    }
-  };
-
-  // Cleanup function for when component unmounts
-  useEffect(() => {
-    return () => {
-      if (mediaRecorder && mediaRecorder.stream) {
-        mediaRecorder.stream.getTracks().forEach(track => track.stop());
-      }
-    };
-  }, [mediaRecorder]);
-
-  // Handle voice recording toggle for initial input
-  const toggleVoiceRecording = async () => {
-    // Initialize microphone if not already done
-    if (!mediaRecorder) {
-      const success = await initializeRecording();
-      if (!success) {
-        // Could show error state here
-        return;
-      }
-    }
-
-    if (!mediaRecorder) return;
-
-    if (isRecording) {
-      // Stop recording and transcribe
-      mediaRecorder.stop();
-      setIsTranscribing(true);
-      
-      // Create audio blob from chunks
-      const audioBlob = new Blob(audioChunks, { type: 'audio/webm;codecs=opus' });
-      setAudioChunks([]); // Clear chunks for next recording
-      
-      try {
-        // Send to our transcription API
-        const formData = new FormData();
-        formData.append('audio', audioBlob, 'recording.webm');
-        
-        const response = await fetch('/api/transcribe', {
-          method: 'POST',
-          body: formData,
-        });
-        
-        if (response.ok) {
-          const { transcript } = await response.json();
-          setQuery(prevQuery => prevQuery + (prevQuery ? ' ' : '') + transcript);
-          
-          // Auto-resize textarea after adding voice input - call immediately and with slight delay
-          if (inputRef.current) {
-            resizeTextarea(inputRef.current);
-          }
-          setTimeout(() => {
-            if (inputRef.current) {
-              resizeTextarea(inputRef.current);
-            }
-          }, 10);
-        } else {
-          console.error('Transcription failed:', response.statusText);
-        }
-      } catch (error) {
-        console.error('Error during transcription:', error);
-      } finally {
-        setIsTranscribing(false);
-      }
-    } else {
-      // Start recording
-      setAudioChunks([]);
-      mediaRecorder.start(100); // Collect data every 100ms
-      setIsRecording(true);
-    }
-  };
-
-  // Update content width when sidebar state changes
+  // Update content width when mobile state changes
   useEffect(() => {
     if (isMobile) {
       setContentWidth("max-w-xl")
@@ -135,31 +93,27 @@ export function CarsonMainContent() {
     }
   }, [isMobile])
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!query.trim() || isLoading) return
-
-    setIsLoading(true)
-    setTimeout(() => {
-      setIsTransitioning(true)
-    }, 300)
-    setTimeout(() => {
-      setIsLoading(false)
-      setInitialTopic(query)
-      setInConversation(true)
-    }, 1000)
-    setTimeout(() => {
-      setIsTransitioning(false)
-    }, 1200)
-  }
-
-  // Auto-resize textarea based on content
+  // Auto-resize textarea with universal best practices
   const resizeTextarea = (textarea: HTMLTextAreaElement) => {
-    // Reset height to auto to get the correct scrollHeight
+    // Reset height to auto to get accurate scrollHeight measurement
     textarea.style.height = "auto"
-    // Set the height to scrollHeight to fit the content, with stricter mobile limits
-    const maxHeight = isMobile ? 80 : 120;
-    textarea.style.height = `${Math.min(textarea.scrollHeight, maxHeight)}px`
+    
+    // Calculate content height
+    const scrollHeight = textarea.scrollHeight
+    
+    // Set responsive max heights based on device
+    const isMobile = window.innerWidth < 768
+    const maxHeight = isMobile ? 80 : 120 // 3-4 lines mobile, 4-5 lines desktop
+    const minHeight = 60 // Slightly larger minimum for home screen
+    
+    // Calculate final height within bounds
+    const finalHeight = Math.min(Math.max(scrollHeight, minHeight), maxHeight)
+    
+    // Apply height with smooth transition
+    textarea.style.height = `${finalHeight}px`
+    
+    // Enable internal scrolling only when at max height
+    textarea.style.overflowY = scrollHeight > maxHeight ? 'auto' : 'hidden'
   };
 
   const handleInput = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -173,23 +127,24 @@ export function CarsonMainContent() {
     inputRef.current?.focus()
   }
 
-  // Handle attachment option selection
-  const handleAttachmentOption = (option: 'file' | 'camera' | 'photos') => {
-    setShowAttachmentModal(false);
-    // TODO: Implement attachment handling
-    console.log(`Selected attachment option: ${option}`);
-  };
-
   return (
     <div className={cn(
-      "flex-1 flex flex-col transition-all duration-700 ease-in-out",
+      "flex-1 flex flex-col transition-all duration-700 ease-in-out h-full",
       isTransitioning && "opacity-20 scale-98 blur-sm",
     )}>
       {inConversation ? (
         // Conversation mode
-        <div className="flex flex-col h-full animate-in fade-in duration-500">
-          <Conversation initialTopic={initialTopic} onInitialTopicUsed={() => setInitialTopic(null)} />
-        </div>
+        <Conversation 
+          initialTopic={initialTopic} 
+          onInitialTopicUsed={() => setInitialTopic(null)}
+          isRecording={isRecording}
+          mediaRecorder={mediaRecorder}
+          audioChunks={audioChunks}
+          isTranscribing={isTranscribing}
+          toggleVoiceRecording={toggleVoiceRecording}
+          inputRef={inputRef}
+          onVoiceTranscript={conversationVoiceCallback}
+        />
       ) : (
         // Initial input mode
         <div className="flex flex-col justify-center items-center h-full min-h-screen bg-gradient-to-br from-gray-50 via-blue-50/30 to-gray-50 dark:from-gray-900 dark:via-gray-900 dark:to-gray-800">
@@ -227,7 +182,7 @@ export function CarsonMainContent() {
                       value={query}
                       onChange={handleInput}
                       placeholder="What would you like to understand better?"
-                      className="w-full px-4 sm:px-6 py-4 sm:py-6 min-h-[60px] sm:min-h-[80px] max-h-[80px] sm:max-h-[150px] md:max-h-[200px] text-base sm:text-lg bg-transparent border-0 focus:ring-0 focus:outline-none resize-none placeholder-gray-500 dark:placeholder-gray-400 text-gray-900 dark:text-white overflow-hidden"
+                      className="w-full px-4 sm:px-6 py-4 sm:py-6 min-h-[60px] sm:min-h-[80px] max-h-[80px] sm:max-h-[150px] md:max-h-[200px] text-base sm:text-lg bg-transparent border-0 focus:ring-0 focus:outline-none resize-none placeholder-gray-500 dark:placeholder-gray-400 text-gray-900 dark:text-white overflow-hidden transition-all duration-200 ease-out"
                       style={{ fontSize: "16px" }}
                       rows={1}
                       disabled={isLoading || isTransitioning}
@@ -388,7 +343,7 @@ interface QuickActionButtonProps {
 }
 
 function QuickActionButton({ icon, label, onClick }: QuickActionButtonProps) {
-  const { isMobile } = useSidebarState()
+  const isMobile = useMobile()
 
   return (
     <button

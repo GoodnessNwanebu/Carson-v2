@@ -113,7 +113,7 @@ export function AppLayout({ children }: AppLayoutProps) {
 
       <div
         className={cn(
-          "flex-1 flex flex-col content-transition",
+          "flex-1 flex flex-col content-transition h-full",
           // Responsive margins: no margin on mobile, responsive margin on desktop based on sidebar state
           "ml-0 md:ml-[60px]",
           !collapsed && "md:ml-[260px]"
