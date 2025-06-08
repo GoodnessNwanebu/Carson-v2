@@ -18,6 +18,21 @@ export interface Subtopic {
   questionsAsked: number;
   correctAnswers: number;
   needsExplanation: boolean;
+  
+  // **NEW**: Triaging model status storage
+  triagingStatus?: {
+    hasInitialAssessment: boolean;
+    gapAnalysis?: {
+      criticalGaps: string[];
+      importantGaps: string[];
+      minorGaps: string[];
+      strengthAreas: string[];
+    };
+    addressedGaps: string[];
+    acknowledgedGaps: string[];
+    questionsUsed: number;
+    hasTestedApplication: boolean;
+  };
 }
 
 export interface CarsonSessionContext {

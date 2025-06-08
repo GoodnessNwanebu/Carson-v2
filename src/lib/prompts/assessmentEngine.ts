@@ -277,38 +277,26 @@ export async function analyzeGaps(
   subtopicTitle: string,
   topic: string
 ): Promise<GapAnalysis> {
-  const assessmentPrompt = `You are a medical education expert analyzing a student's comprehensive response about ${subtopicTitle} in the context of ${topic}.
+  const assessmentPrompt = `Analyze a student's response about ${subtopicTitle} in ${topic}.
 
-**Student's Response**: ${userResponse}
+**Student Response**: ${userResponse}
 
-Analyze their response and categorize ALL knowledge gaps:
+Categorize knowledge gaps by priority:
 
-CRITICAL GAPS (fundamental/dangerous misconceptions that must be addressed):
-- Core pathophysiology they misunderstood
-- Dangerous clinical misconceptions
-- Fundamental mechanisms they missed
-
-IMPORTANT GAPS (common/clinically relevant areas they should know):
-- Common factors/presentations they missed
-- Standard diagnostic/treatment approaches not mentioned
-- Clinically relevant details they're unclear about
-
-MINOR GAPS (nice-to-know but not immediately critical):
-- Rare conditions/factors they didn't mention
-- Academic details that aren't clinically essential
-- Advanced nuances they haven't learned yet
-
-STRENGTH AREAS (things they clearly understand well):
-- Areas they explained correctly and confidently
-- Good clinical reasoning they demonstrated
+1. CRITICAL (must address - dangerous/fundamental gaps)
+2. IMPORTANT (should address - common clinical gaps)  
+3. MINOR (nice to know - rare/academic gaps)
+4. STRENGTHS (areas they understand well)
 
 Respond in JSON format:
 {
-  "criticalGaps": ["list of critical gaps"],
-  "importantGaps": ["list of important gaps"], 
-  "minorGaps": ["list of minor gaps"],
-  "strengthAreas": ["list of strength areas"]
-}`;
+  "criticalGaps": ["specific gap 1", "specific gap 2"],
+  "importantGaps": ["specific gap 1", "specific gap 2"],
+  "minorGaps": ["specific gap 1", "specific gap 2"],
+  "strengthAreas": ["strength 1", "strength 2"]
+}
+
+Analysis:`;
 
   try {
     const response = await callLLM({
@@ -325,25 +313,84 @@ Respond in JSON format:
       isComplete: false,
     });
     
-    if (!response?.content) {
-      throw new Error('No response from LLM');
+    // Validate response structure (copy from assessWithLLM pattern)
+    if (!response || !response.content || typeof response.content !== 'string') {
+      console.error('Gap analysis: Invalid response structure:', response);
+      return getGapAnalysisFallback(userResponse);
     }
     
-    const parsed = JSON.parse(response.content);
-    return {
-      criticalGaps: parsed.criticalGaps || [],
-      importantGaps: parsed.importantGaps || [],
-      minorGaps: parsed.minorGaps || [],
-      strengthAreas: parsed.strengthAreas || []
-    };
+    try {
+      // Try to parse as JSON
+      const parsed = JSON.parse(response.content);
+      
+      // Validate the parsed structure
+      if (!parsed || typeof parsed !== 'object') {
+        console.error('Gap analysis: Parsed content is not an object:', parsed);
+        return getGapAnalysisFallback(userResponse);
+      }
+      
+      return {
+        criticalGaps: Array.isArray(parsed.criticalGaps) ? parsed.criticalGaps : [],
+        importantGaps: Array.isArray(parsed.importantGaps) ? parsed.importantGaps : [],
+        minorGaps: Array.isArray(parsed.minorGaps) ? parsed.minorGaps : [],
+        strengthAreas: Array.isArray(parsed.strengthAreas) ? parsed.strengthAreas : []
+      };
+    } catch (parseError) {
+      // Fallback to simple text parsing (copy from assessWithLLM pattern)
+      const content = response.content.toLowerCase().trim();
+      
+      // Try to extract information from non-JSON response
+      const criticalMatches = content.match(/critical[^:]*:(.*?)(?:important|minor|strength|$)/);
+      const importantMatches = content.match(/important[^:]*:(.*?)(?:critical|minor|strength|$)/);
+      const strengthMatches = content.match(/strength[^:]*:(.*?)(?:critical|important|minor|$)/);
+      
+      return {
+        criticalGaps: criticalMatches ? [criticalMatches[1].trim()] : [],
+        importantGaps: importantMatches ? [importantMatches[1].trim()] : ['Understanding needs clarification'],
+        minorGaps: [],
+        strengthAreas: strengthMatches ? [strengthMatches[1].trim()] : []
+      };
+    }
   } catch (error) {
-    console.error('Gap analysis failed:', error);
-    // Fallback to simple gap identification
+    console.error('Gap analysis failed, using fallback:', error);
+    return getGapAnalysisFallback(userResponse);
+  }
+}
+
+/**
+ * Fallback gap analysis when LLM fails (copy from assessWithLLM pattern)
+ */
+function getGapAnalysisFallback(userResponse: string): GapAnalysis {
+  const response = userResponse.toLowerCase().trim();
+  const length = response.length;
+  
+  // Simple heuristics for gap analysis
+  if (length < 10) {
     return {
-      criticalGaps: [],
-      importantGaps: ['Understanding needs clarification'],
+      criticalGaps: ['Insufficient detail provided'],
+      importantGaps: ['Need more comprehensive explanation'],
       minorGaps: [],
       strengthAreas: []
+    };
+  }
+  
+  // Look for medical terminology
+  const medicalTerms = ['pathophysiology', 'mechanism', 'diagnosis', 'treatment', 'patient', 'clinical'];
+  const hasMedicalTerms = medicalTerms.some(term => response.includes(term));
+  
+  if (hasMedicalTerms && length > 50) {
+    return {
+      criticalGaps: [],
+      importantGaps: ['Some areas need deeper exploration'],
+      minorGaps: ['Advanced concepts could be expanded'],
+      strengthAreas: ['Shows medical vocabulary and basic understanding']
+    };
+  } else {
+    return {
+      criticalGaps: ['Fundamental concepts need clarification'],
+      importantGaps: ['Basic understanding needs development'],
+      minorGaps: [],
+      strengthAreas: length > 20 ? ['Attempting to engage with the topic'] : []
     };
   }
 }
@@ -696,8 +743,8 @@ export async function assessUserResponse(
   const subtopic = context.subtopics[context.currentSubtopicIndex];
   const requirements = generateSubtopicRequirements(subtopic.title, context.topic || "Medical Topic");
   
-  // Get or initialize subtopic status (this would need to be stored in context in a real implementation)
-  const status: SubtopicStatus = (subtopic as any).subtopicStatus || initializeSubtopicStatus();
+  // Get or initialize subtopic status from stored triaging data
+  const status: SubtopicStatus = subtopic.triagingStatus || initializeSubtopicStatus();
   
   const { phase, nextAction, statusUpdate } = await determineTriagingAction(
     userResponse, answerQuality, context, requirements, status, lastCarsonMessage
@@ -995,13 +1042,26 @@ export function updateSessionAfterAssessment(
   const updatedSubtopics = [...context.subtopics];
   
   if (updatedSubtopics[currentSubtopicIndex]) {
+    const currentSubtopic = updatedSubtopics[currentSubtopicIndex];
+    
+    // **NEW**: Apply triaging status updates
+    const baseStatus = currentSubtopic.triagingStatus || initializeSubtopicStatus();
+    let updatedTriagingStatus = baseStatus;
+    if (assessment.statusUpdate) {
+      updatedTriagingStatus = {
+        ...baseStatus,
+        ...assessment.statusUpdate
+      };
+    }
+    
     updatedSubtopics[currentSubtopicIndex] = {
-      ...updatedSubtopics[currentSubtopicIndex],
-      needsExplanation: shouldMarkNeedsExplanation || updatedSubtopics[currentSubtopicIndex].needsExplanation,
-      questionsAsked: updatedSubtopics[currentSubtopicIndex].questionsAsked + 1,
+      ...currentSubtopic,
+      needsExplanation: shouldMarkNeedsExplanation || currentSubtopic.needsExplanation,
+      questionsAsked: currentSubtopic.questionsAsked + 1,
       correctAnswers: isCorrectAnswer ? 
-        updatedSubtopics[currentSubtopicIndex].correctAnswers + 1 : 
-        updatedSubtopics[currentSubtopicIndex].correctAnswers
+        currentSubtopic.correctAnswers + 1 : 
+        currentSubtopic.correctAnswers,
+      triagingStatus: updatedTriagingStatus // **NEW**: Store the triaging status
     };
     updates.subtopics = updatedSubtopics;
   }
@@ -1111,20 +1171,30 @@ function generateGapSpecificQuestion(specificGaps: string, subtopic?: string): s
 function generateReasoningQuestion(subtopic?: string, depth: 'surface' | 'deeper' | 'reasoning' = 'reasoning', topic?: string): string {
   // If we have context, use advanced question types
   if (subtopic && topic) {
-    const questionTypes = ['clinical_vignette', 'differential', 'mechanism', 'priority', 'application'] as const;
+    const allQuestionTypes = ['clinical_vignette', 'differential', 'mechanism', 'priority', 'application'] as const;
     
-    // Weight question types based on depth
-    let weightedTypes: (typeof questionTypes[number])[] = [];
+    // **NEW**: Filter question types by subtopic context
+    const contextuallyAppropriateTypes = filterQuestionTypesByContext([...allQuestionTypes], subtopic);
+    
+    // Weight question types based on depth AND context
+    let weightedTypes: (typeof allQuestionTypes[number])[] = [];
     
     switch (depth) {
       case 'surface':
-        weightedTypes = ['mechanism', 'mechanism', 'priority']; // More basic reasoning
+        // Prefer mechanism and priority if allowed by context
+        const surfacePreferred = ['mechanism', 'priority'];
+        weightedTypes = contextuallyAppropriateTypes.filter(type => surfacePreferred.includes(type));
+        if (weightedTypes.length === 0) weightedTypes = contextuallyAppropriateTypes;
         break;
       case 'deeper':
-        weightedTypes = ['clinical_vignette', 'differential', 'application']; // Applied reasoning
+        // Prefer application and clinical vignettes if allowed by context
+        const deeperPreferred = ['clinical_vignette', 'differential', 'application'];
+        weightedTypes = contextuallyAppropriateTypes.filter(type => deeperPreferred.includes(type));
+        if (weightedTypes.length === 0) weightedTypes = contextuallyAppropriateTypes;
         break;
       case 'reasoning':
-        weightedTypes = ['clinical_vignette', 'clinical_vignette', 'differential', 'mechanism', 'priority', 'application']; // Mix of all
+        // Use all contextually appropriate types
+        weightedTypes = [...contextuallyAppropriateTypes, ...contextuallyAppropriateTypes]; // Double weight
         break;
     }
     
@@ -1132,8 +1202,18 @@ function generateReasoningQuestion(subtopic?: string, depth: 'surface' | 'deeper
     return generateAdvancedQuestion(subtopic, topic, selectedType);
   }
   
-  // Fallback to original simple questions if no context
-  const whyQuestions = [
+  // **NEW**: Context-aware fallback questions
+  const context = getSubtopicContext(subtopic || '');
+  const contextRules = context !== 'general' ? SUBTOPIC_CONTEXT_MAP[context] : null;
+  
+  // Generate questions appropriate to the subtopic context
+  const whyQuestions = contextRules ? [
+    `Why do you think that ${contextRules.keywords[0]} is important?`,
+    `What's the underlying ${contextRules.keywords[0]} here?`,
+    `Why would that ${contextRules.keywords[1]} be significant?`,
+    `What makes this ${contextRules.keywords[0]} particularly relevant?`,
+    `Why is understanding this ${contextRules.keywords[0]} crucial?`
+  ] : [
     `Why do you think that happens?`,
     `What's the underlying mechanism there?`,
     `Why would that increase the risk?`,
@@ -1141,31 +1221,68 @@ function generateReasoningQuestion(subtopic?: string, depth: 'surface' | 'deeper
     `Why do you think some patients are more vulnerable?`
   ];
   
-  const howQuestions = [
-    `How would you explain that to a patient?`,
-    `How does that affect clinical management?`,
-    `How would you prioritize these different factors?`,
-    `How would you use this information in practice?`,
-    `How might this change your approach?`
+  // **NEW**: Domain-specific fallback questions
+  const domainSpecificWhyQuestions: Record<string, string[]> = {
+    biochemistry: [
+      `Why is this enzymatic step rate-limiting?`,
+      `Why would this pathway be upregulated?`,
+      `Why do these cofactors bind in this order?`,
+      `Why is this reaction thermodynamically favorable?`
+    ],
+    pharmacology: [
+      `Why does this drug have this specific mechanism?`,
+      `Why would genetic variants affect drug response?`,
+      `Why is this pharmacokinetic property important?`,
+      `Why do these drug interactions occur?`
+    ],
+    anatomy: [
+      `Why is this anatomical relationship clinically important?`,
+      `Why did this structure develop this way embryologically?`,
+      `Why is this innervation pattern significant?`,
+      `Why do these anatomical variations occur?`
+    ],
+    epidemiology: [
+      `Why would this population have higher risk?`,
+      `Why is this study design appropriate?`,
+      `Why might these results be biased?`,
+      `Why do these epidemiological patterns exist?`
+    ]
+  };
+  
+  // Use domain-specific questions if available
+  const finalWhyQuestions = domainSpecificWhyQuestions[context] || whyQuestions;
+  
+  const howQuestions = contextRules && !contextRules.forbiddenQuestionTypes.includes('application') ? [
+    `How would you explain this ${contextRules.keywords[0]} to a patient?`,
+    `How does this ${contextRules.keywords[0]} affect your approach?`,
+    `How would you prioritize these ${contextRules.keywords[1]} factors?`,
+    `How would you use this ${contextRules.keywords[0]} knowledge in practice?`,
+    `How might this ${contextRules.keywords[0]} change your thinking?`
+  ] : [
+    `How would you explain that mechanism?`,
+    `How do these factors interact?`,
+    `How would you prioritize these different aspects?`,
+    `How would you connect these concepts?`,
+    `How might this influence your understanding?`
   ];
   
   const clinicalReasoningQuestions = [
-    `Walk me through your clinical reasoning here.`,
-    `What would make you most concerned in this scenario?`,
-    `How would you weight these different factors?`,
-    `What patterns do you see emerging?`,
-    `How would this influence your differential diagnosis?`
+    `Walk me through your thinking about this ${contextRules?.keywords[0] || 'concept'}.`,
+    `What would make you most concerned about this ${contextRules?.keywords[0] || 'finding'}?`,
+    `How would you weight these different ${contextRules?.keywords[1] || 'factors'}?`,
+    `What patterns do you see in this ${contextRules?.keywords[0] || 'area'}?`,
+    `How would this influence your understanding of ${contextRules?.keywords[0] || 'the topic'}?`
   ];
   
   switch (depth) {
     case 'surface': 
-      return whyQuestions[Math.floor(Math.random() * whyQuestions.length)];
+      return finalWhyQuestions[Math.floor(Math.random() * finalWhyQuestions.length)];
     case 'deeper': 
       return howQuestions[Math.floor(Math.random() * howQuestions.length)];
     case 'reasoning': 
       return clinicalReasoningQuestions[Math.floor(Math.random() * clinicalReasoningQuestions.length)];
     default: 
-      return whyQuestions[Math.floor(Math.random() * whyQuestions.length)];
+      return finalWhyQuestions[Math.floor(Math.random() * finalWhyQuestions.length)];
   }
 }
 
@@ -1321,6 +1438,39 @@ function generateKeyPoint(subtopic?: string, needsAnalogy?: boolean): string {
 
 // **NEW**: Advanced question generation for clinical reasoning
 function generateAdvancedQuestion(subtopic: string, topic: string, questionType: 'clinical_vignette' | 'differential' | 'mechanism' | 'priority' | 'application'): string {
+  // **NEW**: Check if this is a non-clinical domain that needs specialized question generation
+  const context = getSubtopicContext(subtopic);
+  
+  // Use domain-specific generators for non-clinical contexts
+  if (questionType === 'mechanism') {
+    switch (context) {
+      case 'biochemistry':
+        return generateBiochemistryQuestion(subtopic, topic);
+      case 'pharmacology':
+        return generatePharmacologyQuestion(subtopic, topic);
+      case 'anatomy':
+        return generateAnatomyQuestion(subtopic, topic);
+      case 'physiology':
+        return generatePhysiologyQuestion(subtopic, topic);
+      case 'genetics':
+        return generateGeneticsQuestion(subtopic, topic);
+      case 'microbiology':
+        return generateMicrobiologyQuestion(subtopic, topic);
+      case 'immunology':
+        return generateImmunologyQuestion(subtopic, topic);
+    }
+  }
+  
+  if (questionType === 'differential') {
+    switch (context) {
+      case 'epidemiology':
+        return generateEpidemiologyQuestion(subtopic, topic);
+      case 'public health':
+        return generatePublicHealthQuestion(subtopic, topic);
+    }
+  }
+  
+  // Default to original clinical question generators
   switch (questionType) {
     case 'clinical_vignette':
       return generateClinicalVignette(subtopic, topic);
@@ -1419,6 +1569,115 @@ function generateApplicationQuestion(subtopic: string, topic: string): string {
   ];
   
   return applicationQuestions[Math.floor(Math.random() * applicationQuestions.length)];
+}
+
+// **NEW**: Domain-specific question generators for non-clinical contexts
+function generateBiochemistryQuestion(subtopic: string, topic: string): string {
+  const biochemQuestions = [
+    `Walk me through the enzymatic steps in this ${topic} pathway. What happens at each stage?`,
+    `What would happen to this ${topic} pathway if you inhibited the rate-limiting enzyme?`,
+    `How does the regulation of ${topic} change under different metabolic conditions?`,
+    `What cofactors or coenzymes are essential for this ${topic} process and why?`,
+    `How does the thermodynamics of this ${topic} reaction drive the overall pathway?`
+  ];
+  
+  return biochemQuestions[Math.floor(Math.random() * biochemQuestions.length)];
+}
+
+function generatePharmacologyQuestion(subtopic: string, topic: string): string {
+  const pharmacQuestions = [
+    `How does the mechanism of action of ${topic} lead to its therapeutic effects?`,
+    `What pharmacokinetic properties of ${topic} determine its dosing schedule?`,
+    `How would you expect drug interactions to affect ${topic} metabolism or efficacy?`,
+    `What factors influence the bioavailability and distribution of ${topic}?`,
+    `How do genetic polymorphisms affect individual responses to ${topic}?`
+  ];
+  
+  return pharmacQuestions[Math.floor(Math.random() * pharmacQuestions.length)];
+}
+
+function generateAnatomyQuestion(subtopic: string, topic: string): string {
+  const anatomyQuestions = [
+    `Describe the spatial relationships between ${topic} and surrounding structures.`,
+    `How does the embryological development of ${topic} explain its adult anatomy?`,
+    `What blood supply and innervation patterns characterize ${topic}?`,
+    `How do anatomical variations in ${topic} affect its function or clinical significance?`,
+    `What anatomical landmarks help identify ${topic} during examination or procedures?`
+  ];
+  
+  return anatomyQuestions[Math.floor(Math.random() * anatomyQuestions.length)];
+}
+
+function generatePhysiologyQuestion(subtopic: string, topic: string): string {
+  const physiologyQuestions = [
+    `How does the body maintain homeostasis when ${topic} function is challenged?`,
+    `What feedback mechanisms regulate ${topic} under normal conditions?`,
+    `How do changes in one aspect of ${topic} affect the entire system?`,
+    `What adaptive responses occur when ${topic} is under physiological stress?`,
+    `How does ${topic} integrate with other physiological systems?`
+  ];
+  
+  return physiologyQuestions[Math.floor(Math.random() * physiologyQuestions.length)];
+}
+
+function generateEpidemiologyQuestion(subtopic: string, topic: string): string {
+  const epidemiologyQuestions = [
+    `How would you interpret incidence and prevalence data for ${topic} in different populations?`,
+    `What study design would best answer questions about ${topic} risk factors?`,
+    `How do demographic factors influence the epidemiology of ${topic}?`,
+    `What biases might affect studies investigating ${topic}?`,
+    `How would you calculate and interpret measures of association for ${topic}?`
+  ];
+  
+  return epidemiologyQuestions[Math.floor(Math.random() * epidemiologyQuestions.length)];
+}
+
+function generatePublicHealthQuestion(subtopic: string, topic: string): string {
+  const publicHealthQuestions = [
+    `What population-level interventions could reduce the burden of ${topic}?`,
+    `How would you design a screening program for ${topic} in the community?`,
+    `What policy changes could improve prevention of ${topic}?`,
+    `How do social determinants of health influence ${topic} outcomes?`,
+    `What community resources would support people affected by ${topic}?`
+  ];
+  
+  return publicHealthQuestions[Math.floor(Math.random() * publicHealthQuestions.length)];
+}
+
+function generateGeneticsQuestion(subtopic: string, topic: string): string {
+  const geneticsQuestions = [
+    `How would you predict inheritance patterns for ${topic} in a family pedigree?`,
+    `What molecular mechanisms explain the genetic basis of ${topic}?`,
+    `How do different types of mutations affect ${topic} expression or function?`,
+    `What genetic counseling considerations apply to ${topic}?`,
+    `How do genetic and environmental factors interact in ${topic}?`
+  ];
+  
+  return geneticsQuestions[Math.floor(Math.random() * geneticsQuestions.length)];
+}
+
+function generateMicrobiologyQuestion(subtopic: string, topic: string): string {
+  const microbiologyQuestions = [
+    `What characteristics help identify ${topic} in laboratory settings?`,
+    `How does ${topic} evade host immune responses?`,
+    `What environmental factors affect ${topic} growth and survival?`,
+    `How does ${topic} develop resistance to antimicrobial agents?`,
+    `What virulence factors make ${topic} pathogenic?`
+  ];
+  
+  return microbiologyQuestions[Math.floor(Math.random() * microbiologyQuestions.length)];
+}
+
+function generateImmunologyQuestion(subtopic: string, topic: string): string {
+  const immunologyQuestions = [
+    `How does the immune system recognize and respond to ${topic}?`,
+    `What happens when immune tolerance breaks down in relation to ${topic}?`,
+    `How do different immune cell types coordinate their response to ${topic}?`,
+    `What molecular signals regulate the immune response to ${topic}?`,
+    `How does ${topic} affect both innate and adaptive immunity?`
+  ];
+  
+  return immunologyQuestions[Math.floor(Math.random() * immunologyQuestions.length)];
 }
 
 /**
@@ -1809,4 +2068,165 @@ function generateEmotionalSupport(response: string): string {
   ];
   
   return supportMessages[Math.floor(Math.random() * supportMessages.length)];
-} 
+}
+
+// **NEW**: Subtopic context enforcement mapping
+const SUBTOPIC_CONTEXT_MAP = {
+  // ===== CLINICAL MEDICINE CONTEXTS =====
+  pathophysiology: {
+    allowedQuestionTypes: ['mechanism', 'differential'],
+    keywords: ['mechanism', 'pathophysio', 'process', 'cellular', 'molecular'],
+    forbiddenQuestionTypes: ['management', 'treatment', 'application'],
+    enforcePrompt: 'Focus on mechanisms and processes only'
+  },
+  definition: {
+    allowedQuestionTypes: ['mechanism', 'differential'],
+    keywords: ['definition', 'what is', 'characterized by', 'classification'],
+    forbiddenQuestionTypes: ['management', 'treatment', 'application'],
+    enforcePrompt: 'Focus on definitions and classifications only'
+  },
+  'risk factors': {
+    allowedQuestionTypes: ['clinical_vignette', 'differential', 'priority'],
+    keywords: ['risk', 'factor', 'predispos', 'increase', 'likelihood'],
+    forbiddenQuestionTypes: ['management', 'treatment'],
+    enforcePrompt: 'Focus on risk factors and predisposing conditions only'
+  },
+  presentation: {
+    allowedQuestionTypes: ['clinical_vignette', 'differential'],
+    keywords: ['symptom', 'sign', 'present', 'clinical', 'manifestation'],
+    forbiddenQuestionTypes: ['management', 'treatment'],
+    enforcePrompt: 'Focus on clinical presentation and symptoms only'
+  },
+  diagnosis: {
+    allowedQuestionTypes: ['clinical_vignette', 'differential', 'priority'],
+    keywords: ['diagnos', 'test', 'workup', 'imaging', 'lab'],
+    forbiddenQuestionTypes: ['treatment', 'management'],
+    enforcePrompt: 'Focus on diagnostic approach and workup only'
+  },
+  management: {
+    allowedQuestionTypes: ['clinical_vignette', 'application', 'priority'],
+    keywords: ['treatment', 'manage', 'therapy', 'intervention'],
+    forbiddenQuestionTypes: ['mechanism'],
+    enforcePrompt: 'Focus on treatment and management only'
+  },
+  
+  // ===== BASIC SCIENCE CONTEXTS =====
+  biochemistry: {
+    allowedQuestionTypes: ['mechanism', 'differential'],
+    keywords: ['biochemistry', 'enzyme', 'pathway', 'metabolism', 'reaction', 'molecular', 'protein', 'substrate'],
+    forbiddenQuestionTypes: ['clinical_vignette', 'management', 'treatment', 'application'],
+    enforcePrompt: 'Focus on molecular mechanisms, enzymatic pathways, and biochemical processes only'
+  },
+  pharmacology: {
+    allowedQuestionTypes: ['mechanism', 'differential', 'application'],
+    keywords: ['pharmacology', 'drug', 'medication', 'receptor', 'kinetics', 'metabolism', 'interaction', 'adverse'],
+    forbiddenQuestionTypes: ['clinical_vignette', 'management'],
+    enforcePrompt: 'Focus on drug mechanisms, pharmacokinetics, and drug interactions only'
+  },
+  anatomy: {
+    allowedQuestionTypes: ['mechanism', 'differential'],
+    keywords: ['anatomy', 'structure', 'location', 'relationship', 'innervation', 'blood supply', 'embryology'],
+    forbiddenQuestionTypes: ['clinical_vignette', 'management', 'treatment', 'application'],
+    enforcePrompt: 'Focus on anatomical structures, relationships, and embryological development only'
+  },
+  physiology: {
+    allowedQuestionTypes: ['mechanism', 'differential'],
+    keywords: ['physiology', 'function', 'regulation', 'homeostasis', 'control', 'response', 'adaptation'],
+    forbiddenQuestionTypes: ['clinical_vignette', 'management', 'treatment', 'application'],
+    enforcePrompt: 'Focus on normal physiological functions and regulatory mechanisms only'
+  },
+  
+  // ===== POPULATION HEALTH CONTEXTS =====
+  epidemiology: {
+    allowedQuestionTypes: ['differential', 'priority'],
+    keywords: ['epidemiology', 'incidence', 'prevalence', 'risk', 'population', 'study', 'cohort', 'case-control'],
+    forbiddenQuestionTypes: ['mechanism', 'clinical_vignette', 'management', 'treatment'],
+    enforcePrompt: 'Focus on population health data, study design, and epidemiological concepts only'
+  },
+  'public health': {
+    allowedQuestionTypes: ['differential', 'priority', 'application'],
+    keywords: ['public health', 'prevention', 'screening', 'policy', 'community', 'intervention', 'health promotion'],
+    forbiddenQuestionTypes: ['mechanism', 'clinical_vignette', 'management'],
+    enforcePrompt: 'Focus on population-level interventions, prevention strategies, and health policy only'
+  },
+  biostatistics: {
+    allowedQuestionTypes: ['differential', 'priority'],
+    keywords: ['statistics', 'biostatistics', 'data', 'analysis', 'significance', 'power', 'sample size', 'bias'],
+    forbiddenQuestionTypes: ['mechanism', 'clinical_vignette', 'management', 'treatment', 'application'],
+    enforcePrompt: 'Focus on statistical concepts, study design, and data analysis only'
+  },
+  
+  // ===== SPECIALTY CONTEXTS =====
+  genetics: {
+    allowedQuestionTypes: ['mechanism', 'differential'],
+    keywords: ['genetics', 'inheritance', 'mutation', 'gene', 'chromosome', 'allele', 'hereditary', 'genomic'],
+    forbiddenQuestionTypes: ['clinical_vignette', 'management', 'treatment', 'application'],
+    enforcePrompt: 'Focus on genetic principles, inheritance patterns, and molecular genetics only'
+  },
+  microbiology: {
+    allowedQuestionTypes: ['mechanism', 'differential'],
+    keywords: ['microbiology', 'bacteria', 'virus', 'fungi', 'parasite', 'infection', 'organism', 'resistance'],
+    forbiddenQuestionTypes: ['clinical_vignette', 'management', 'treatment', 'application'],
+    enforcePrompt: 'Focus on microbial characteristics, life cycles, and resistance mechanisms only'
+  },
+  immunology: {
+    allowedQuestionTypes: ['mechanism', 'differential'],
+    keywords: ['immunology', 'immune', 'antibody', 'antigen', 'lymphocyte', 'response', 'hypersensitivity'],
+    forbiddenQuestionTypes: ['clinical_vignette', 'management', 'treatment', 'application'],
+    enforcePrompt: 'Focus on immune mechanisms, cellular responses, and immunological processes only'
+  }
+};
+
+/**
+ * **NEW**: Determine subtopic context category from title
+ */
+function getSubtopicContext(subtopicTitle: string): keyof typeof SUBTOPIC_CONTEXT_MAP | 'general' {
+  const title = subtopicTitle.toLowerCase();
+  
+  // Clinical medicine contexts
+  if (title.includes('pathophysio') || title.includes('mechanism')) return 'pathophysiology';
+  if (title.includes('definition') || title.includes('types') || title.includes('classification')) return 'definition';
+  if (title.includes('risk') || title.includes('factor') || title.includes('predispos')) return 'risk factors';
+  if (title.includes('presentation') || title.includes('symptom') || title.includes('clinical')) return 'presentation';
+  if (title.includes('diagnos') || title.includes('workup') || title.includes('test')) return 'diagnosis';
+  if (title.includes('management') || title.includes('treatment') || title.includes('therapy')) return 'management';
+  
+  // Basic science contexts
+  if (title.includes('biochemistry') || title.includes('enzyme') || title.includes('pathway') || title.includes('metabolism')) return 'biochemistry';
+  if (title.includes('pharmacology') || title.includes('drug') || title.includes('medication') || title.includes('kinetics')) return 'pharmacology';
+  if (title.includes('anatomy') || title.includes('structure') || title.includes('innervation') || title.includes('embryology')) return 'anatomy';
+  if (title.includes('physiology') || title.includes('function') || title.includes('regulation') || title.includes('homeostasis')) return 'physiology';
+  
+  // Population health contexts
+  if (title.includes('epidemiology') || title.includes('incidence') || title.includes('prevalence') || title.includes('population')) return 'epidemiology';
+  if (title.includes('public health') || title.includes('prevention') || title.includes('screening') || title.includes('policy')) return 'public health';
+  if (title.includes('biostatistics') || title.includes('statistics') || title.includes('data analysis') || title.includes('study design')) return 'biostatistics';
+  
+  // Specialty contexts
+  if (title.includes('genetics') || title.includes('inheritance') || title.includes('mutation') || title.includes('gene')) return 'genetics';
+  if (title.includes('microbiology') || title.includes('bacteria') || title.includes('virus') || title.includes('infection')) return 'microbiology';
+  if (title.includes('immunology') || title.includes('immune') || title.includes('antibody') || title.includes('antigen')) return 'immunology';
+  
+  return 'general';
+}
+
+/**
+ * **NEW**: Filter question types based on subtopic context
+ */
+function filterQuestionTypesByContext(
+  questionTypes: ('clinical_vignette' | 'differential' | 'mechanism' | 'priority' | 'application')[],
+  subtopicTitle: string
+): ('clinical_vignette' | 'differential' | 'mechanism' | 'priority' | 'application')[] {
+  const context = getSubtopicContext(subtopicTitle);
+  
+  if (context === 'general') return questionTypes; // No filtering for general subtopics
+  
+  const contextRules = SUBTOPIC_CONTEXT_MAP[context];
+  const allowedTypes = questionTypes.filter(type => 
+    contextRules.allowedQuestionTypes.includes(type) && 
+    !contextRules.forbiddenQuestionTypes.includes(type)
+  );
+  
+  // Fallback to differential if no allowed types
+  return allowedTypes.length > 0 ? allowedTypes : ['differential'];
+}
