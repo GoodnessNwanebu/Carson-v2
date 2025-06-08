@@ -3,7 +3,32 @@ import { callLLM } from './llm-service';
 
 // Assessment types
 export type AnswerQuality = 'excellent' | 'good' | 'partial' | 'incorrect' | 'confused';
-export type NextAction = 'continue_parent' | 'ask_child' | 'give_cue' | 'explain' | 'check_understanding' | 'complete_subtopic';
+export type NextAction = 'continue_conversation' | 'give_cue' | 'explain' | 'check_understanding' | 'complete_subtopic';
+
+// **NEW**: Simple Triaging Model (Session-Constrained)
+export interface SubtopicRequirements {
+  maxQuestions: number;           // Hard limit to prevent endless loops
+  minQuestionsForMastery: number; // Minimum questions before considering mastery
+  mustTestApplication: boolean;   // Whether to include application scenario
+}
+
+export interface GapAnalysis {
+  criticalGaps: string[];         // Must address - fundamental/dangerous misconceptions
+  importantGaps: string[];        // Should address - common/clinically relevant
+  minorGaps: string[];           // Nice to address - rare/academic details
+  strengthAreas: string[];        // Areas student understands well
+}
+
+export interface SubtopicStatus {
+  hasInitialAssessment: boolean;  // Whether we've done comprehensive gap analysis
+  gapAnalysis?: GapAnalysis;      // Results of initial comprehensive assessment
+  addressedGaps: string[];        // Gaps we've successfully addressed
+  acknowledgedGaps: string[];     // Gaps we've acknowledged but deferred
+  questionsUsed: number;          // Questions used so far in this subtopic
+  hasTestedApplication: boolean;  // Whether we've tested clinical application
+}
+
+export type AssessmentPhase = 'initial_assessment' | 'targeted_remediation' | 'application' | 'gap_acknowledgment' | 'complete';
 
 export interface AssessmentResult {
   answerQuality: AnswerQuality;
@@ -12,6 +37,8 @@ export interface AssessmentResult {
   isStruggling?: boolean;
   specificGaps?: string;
   interactionType: InteractionType;
+  currentPhase?: AssessmentPhase;
+  statusUpdate?: Partial<SubtopicStatus>;
 }
 
 // Response type definitions
@@ -196,6 +223,129 @@ export interface KnowledgeRetentionTest {
   subtopicIndex: number;
   questionType: 'retention' | 'connection' | 'application';
   lastTestedAt?: Date;
+}
+
+/**
+ * Generate requirements for a subtopic based on its title and topic
+ */
+export function generateSubtopicRequirements(subtopicTitle: string, topic: string): SubtopicRequirements {
+  const titleLower = subtopicTitle.toLowerCase();
+  
+  let mustTestApplication = true;
+  let maxQuestions = 8;
+  let minQuestionsForMastery = 3;
+  
+  // Pathophysiology subtopics - often pure knowledge
+  if (titleLower.includes('pathophysio') || titleLower.includes('mechanism') || titleLower.includes('definition')) {
+    mustTestApplication = false; // Pure knowledge, not always clinical application
+    minQuestionsForMastery = 2; // Can be faster for definitions
+    maxQuestions = 6; // Simpler topics need fewer questions
+  }
+  
+  // Clinical subtopics - always test application
+  else if (titleLower.includes('management') || titleLower.includes('treatment') || 
+           titleLower.includes('diagnos') || titleLower.includes('presentation')) {
+    mustTestApplication = true; // Always test clinical reasoning
+    maxQuestions = 8; // May need more questions for complex scenarios
+  }
+  
+  return {
+    maxQuestions,
+    minQuestionsForMastery,
+    mustTestApplication
+  };
+}
+
+/**
+ * Initialize subtopic status for a new subtopic
+ */
+export function initializeSubtopicStatus(): SubtopicStatus {
+  return {
+    hasInitialAssessment: false,
+    addressedGaps: [],
+    acknowledgedGaps: [],
+    questionsUsed: 0,
+    hasTestedApplication: false
+  };
+}
+
+/**
+ * Analyze student's comprehensive response to identify all gaps with priorities
+ */
+export async function analyzeGaps(
+  userResponse: string,
+  subtopicTitle: string,
+  topic: string
+): Promise<GapAnalysis> {
+  const assessmentPrompt = `You are a medical education expert analyzing a student's comprehensive response about ${subtopicTitle} in the context of ${topic}.
+
+**Student's Response**: ${userResponse}
+
+Analyze their response and categorize ALL knowledge gaps:
+
+CRITICAL GAPS (fundamental/dangerous misconceptions that must be addressed):
+- Core pathophysiology they misunderstood
+- Dangerous clinical misconceptions
+- Fundamental mechanisms they missed
+
+IMPORTANT GAPS (common/clinically relevant areas they should know):
+- Common factors/presentations they missed
+- Standard diagnostic/treatment approaches not mentioned
+- Clinically relevant details they're unclear about
+
+MINOR GAPS (nice-to-know but not immediately critical):
+- Rare conditions/factors they didn't mention
+- Academic details that aren't clinically essential
+- Advanced nuances they haven't learned yet
+
+STRENGTH AREAS (things they clearly understand well):
+- Areas they explained correctly and confidently
+- Good clinical reasoning they demonstrated
+
+Respond in JSON format:
+{
+  "criticalGaps": ["list of critical gaps"],
+  "importantGaps": ["list of important gaps"], 
+  "minorGaps": ["list of minor gaps"],
+  "strengthAreas": ["list of strength areas"]
+}`;
+
+  try {
+    const response = await callLLM({
+      sessionId: 'gap-analysis',
+      topic: assessmentPrompt,
+      subtopics: [],
+      currentSubtopicIndex: 0,
+      history: [],
+      currentQuestionType: 'follow_up',
+      questionsAskedInCurrentSubtopic: 0,
+      correctAnswersInCurrentSubtopic: 0,
+      currentSubtopicState: 'assessing',
+      shouldTransition: false,
+      isComplete: false,
+    });
+    
+    if (!response?.content) {
+      throw new Error('No response from LLM');
+    }
+    
+    const parsed = JSON.parse(response.content);
+    return {
+      criticalGaps: parsed.criticalGaps || [],
+      importantGaps: parsed.importantGaps || [],
+      minorGaps: parsed.minorGaps || [],
+      strengthAreas: parsed.strengthAreas || []
+    };
+  } catch (error) {
+    console.error('Gap analysis failed:', error);
+    // Fallback to simple gap identification
+    return {
+      criticalGaps: [],
+      importantGaps: ['Understanding needs clarification'],
+      minorGaps: [],
+      strengthAreas: []
+    };
+  }
 }
 
 /**
@@ -398,11 +548,12 @@ Assessment:`;
       subtopics: [],
       currentSubtopicIndex: 0,
       history: [],
-      currentQuestionType: 'parent',
+      currentQuestionType: 'follow_up',
       questionsAskedInCurrentSubtopic: 0,
       correctAnswersInCurrentSubtopic: 0,
       currentSubtopicState: 'assessing',
       shouldTransition: false,
+      isComplete: false,
     });
     
     // Validate response structure
@@ -499,7 +650,7 @@ export async function assessUserResponse(
     // Return a special assessment result for non-medical interactions
     return {
       answerQuality: 'conversational' as any, // Special type for non-medical
-      nextAction: 'continue_parent',
+      nextAction: 'continue_conversation',
       reasoning: interaction.suggestedResponse || "Let's continue with our learning.",
       isStruggling: interaction.type === 'emotional_support' || interaction.type === 'give_up',
       specificGaps: undefined,
@@ -541,69 +692,178 @@ export async function assessUserResponse(
     specificGaps = assessmentResult.specificGaps;
   }
   
-  const nextAction = determineNextAction(answerQuality, context);
+  // **NEW**: Use simple triaging model
+  const subtopic = context.subtopics[context.currentSubtopicIndex];
+  const requirements = generateSubtopicRequirements(subtopic.title, context.topic || "Medical Topic");
+  
+  // Get or initialize subtopic status (this would need to be stored in context in a real implementation)
+  const status: SubtopicStatus = (subtopic as any).subtopicStatus || initializeSubtopicStatus();
+  
+  const { phase, nextAction, statusUpdate } = await determineTriagingAction(
+    userResponse, answerQuality, context, requirements, status, lastCarsonMessage
+  );
   
   return {
     answerQuality,
     nextAction,
-    reasoning: generateReasoningForAssessment(answerQuality, nextAction, context, specificGaps),
+    reasoning: generateReasoningForAssessment(answerQuality, nextAction, context, specificGaps, phase),
     isStruggling: isUserStruggling,
     specificGaps,
-    interactionType: 'medical_response'
+    interactionType: 'medical_response',
+    currentPhase: phase,
+    statusUpdate
   } as AssessmentResult & { interactionType: InteractionType };
 }
 
-// **ENHANCED**: Update the escape valve logic to provide supportive transitions
-function determineNextAction(answerQuality: AnswerQuality, context: CarsonSessionContext): NextAction {
-  const { currentQuestionType, questionsAskedInCurrentSubtopic, correctAnswersInCurrentSubtopic, currentSubtopicState } = context;
+/**
+ * Determine assessment phase and next action using simple triaging model
+ */
+async function determineTriagingAction(
+  userResponse: string,
+  answerQuality: AnswerQuality, 
+  context: CarsonSessionContext,
+  requirements: SubtopicRequirements,
+  status: SubtopicStatus,
+  lastCarsonMessage: string
+): Promise<{ phase: AssessmentPhase; nextAction: NextAction; statusUpdate: Partial<SubtopicStatus> }> {
   
-  // **SIMPLIFIED**: More reasonable requirements for moving forward
-  const hasMinimumCorrectAnswers = correctAnswersInCurrentSubtopic >= 2;
-  const hasAskedEnoughQuestions = questionsAskedInCurrentSubtopic >= 2;
-  const hasGoodSuccessRate = correctAnswersInCurrentSubtopic / Math.max(questionsAskedInCurrentSubtopic, 1) >= 0.6;
+  const questionsUsed = status.questionsUsed + 1;
+  
+  // **ESCAPE VALVE**: Hard stop at max questions
+  if (questionsUsed >= requirements.maxQuestions) {
+    return {
+      phase: 'complete',
+      nextAction: 'complete_subtopic',
+      statusUpdate: { questionsUsed }
+    };
+  }
+  
+  // **PHASE 1: INITIAL ASSESSMENT** - Comprehensive gap analysis on first question
+  if (!status.hasInitialAssessment) {
+    const gapAnalysis = await analyzeGaps(
+      userResponse, 
+      context.subtopics[context.currentSubtopicIndex].title,
+      context.topic || "Medical Topic"
+    );
+    
+    return {
+      phase: 'initial_assessment',
+      nextAction: gapAnalysis.criticalGaps.length > 0 ? 'continue_conversation' : 
+                  (answerQuality === 'confused' ? 'explain' : 'continue_conversation'),
+      statusUpdate: { 
+        questionsUsed,
+        hasInitialAssessment: true,
+        gapAnalysis
+      }
+    };
+  }
+  
+  // **PHASE 2: TARGETED REMEDIATION** - Address gaps by priority
+  const gaps = status.gapAnalysis!;
+  const unaddressedCritical = gaps.criticalGaps.filter(gap => !status.addressedGaps.includes(gap));
+  const unaddressedImportant = gaps.importantGaps.filter(gap => !status.addressedGaps.includes(gap));
+  
+  // Address critical gaps first
+  if (unaddressedCritical.length > 0) {
+    const statusUpdate: Partial<SubtopicStatus> = { questionsUsed };
+    
+    if (['excellent', 'good'].includes(answerQuality)) {
+      // Gap addressed successfully
+      statusUpdate.addressedGaps = [...status.addressedGaps, unaddressedCritical[0]];
+    }
+    
+    return {
+      phase: 'targeted_remediation',
+      nextAction: answerQuality === 'confused' ? 'explain' : 'continue_conversation',
+      statusUpdate
+    };
+  }
+  
+  // Then address important gaps if we have time/questions
+  if (unaddressedImportant.length > 0 && questionsUsed < requirements.maxQuestions - 1) {
+    const statusUpdate: Partial<SubtopicStatus> = { questionsUsed };
+    
+    if (['excellent', 'good'].includes(answerQuality)) {
+      statusUpdate.addressedGaps = [...status.addressedGaps, unaddressedImportant[0]];
+    }
+    
+    return {
+      phase: 'targeted_remediation', 
+      nextAction: answerQuality === 'confused' ? 'explain' : 'continue_conversation',
+      statusUpdate
+    };
+  }
+  
+  // **PHASE 3: APPLICATION** - Test clinical reasoning if required and time allows
+  if (requirements.mustTestApplication && !status.hasTestedApplication && 
+      questionsUsed < requirements.maxQuestions) {
+    return {
+      phase: 'application',
+      nextAction: answerQuality === 'confused' ? 'explain' : 'continue_conversation',
+      statusUpdate: { 
+        questionsUsed,
+        hasTestedApplication: true 
+      }
+    };
+  }
+  
+  // **PHASE 4: GAP ACKNOWLEDGMENT** - Acknowledge unaddressed gaps before completing
+  const unaddressedMinor = gaps.minorGaps.filter(gap => !status.addressedGaps.includes(gap));
+  const unaddressedImportantRemaining = gaps.importantGaps.filter(gap => !status.addressedGaps.includes(gap));
+  
+  if ((unaddressedImportantRemaining.length > 0 || unaddressedMinor.length > 0) && 
+      !status.acknowledgedGaps.length) {
+    // Acknowledge what we're not covering
+    const allUnaddressed = [...unaddressedImportantRemaining, ...unaddressedMinor];
+    return {
+      phase: 'gap_acknowledgment',
+      nextAction: 'continue_conversation', // Generate acknowledgment response
+      statusUpdate: { 
+        questionsUsed,
+        acknowledgedGaps: allUnaddressed 
+      }
+    };
+  }
+  
+  // **COMPLETE**: All critical gaps addressed, application tested (if required), gaps acknowledged
+  return {
+    phase: 'complete',
+    nextAction: 'complete_subtopic',
+    statusUpdate: { questionsUsed }
+  };
+}
+
+// **LEGACY**: Simplified version for backwards compatibility
+function determineNextAction(answerQuality: AnswerQuality, context: CarsonSessionContext): NextAction {
+  const { questionsAskedInCurrentSubtopic, correctAnswersInCurrentSubtopic, currentSubtopicState } = context;
+  
+  // **HIGHER STANDARDS**: More rigorous requirements like a real attending
+  const hasMinimumCorrectAnswers = correctAnswersInCurrentSubtopic >= 3; // Raised from 2
+  const hasAskedEnoughQuestions = questionsAskedInCurrentSubtopic >= 3;   // Raised from 2
+  const hasGoodSuccessRate = correctAnswersInCurrentSubtopic / Math.max(questionsAskedInCurrentSubtopic, 1) >= 0.8; // Raised from 0.6
   const meetsMasteryThreshold = hasMinimumCorrectAnswers && hasAskedEnoughQuestions && hasGoodSuccessRate;
   
   switch (currentSubtopicState) {
     case 'assessing':
-      if (currentQuestionType === 'parent') {
         switch (answerQuality) {
           case 'excellent':
           case 'good':
-            // If they clearly understand, let them advance
+          // Carson keeps probing until confident they really understand
             if (meetsMasteryThreshold) {
               return 'complete_subtopic';
-            } else if (questionsAskedInCurrentSubtopic < 2) {
-              return 'continue_parent'; // Need more assessment
             } else {
-              return 'ask_child'; // Test depth with child questions
+            return 'continue_conversation'; // Natural follow-up probing
             }
           case 'partial':
-            // For partial answers, give some opportunities but don't trap them
-            if (meetsMasteryThreshold) {
-              return 'complete_subtopic';
-            } else if (questionsAskedInCurrentSubtopic >= 3) {
-              return 'give_cue'; // Provide guidance after a few attempts
+          // Give some opportunities but provide guidance if struggling
+          if (questionsAskedInCurrentSubtopic >= 4) {
+            return 'give_cue'; // Help after several attempts
             }
-            return 'continue_parent';
+          return 'continue_conversation';
           default: // 'confused' and 'incorrect'
-            // When confused, just explain - no counting attempts
+          // When confused, explain clearly
             return 'explain';
         }
-      } else if (currentQuestionType === 'child') {
-        switch (answerQuality) {
-          case 'excellent':
-          case 'good':
-            // Child questions show deep understanding
-            if (meetsMasteryThreshold) {
-              return 'complete_subtopic';
-            }
-            return 'continue_parent'; // Continue exploring
-          default: // 'partial', 'confused', 'incorrect'
-            // Don't trap students in child questions - fall back to parent level
-            return 'continue_parent';
-        }
-      }
-      break;
       
     case 'explaining':
       // After explanation, always check understanding
@@ -616,13 +876,12 @@ function determineNextAction(answerQuality: AnswerQuality, context: CarsonSessio
           // Good understanding after explanation = ready to move
           return 'complete_subtopic';
         default:
-          // If still confused after explanation, just move on
+          // If still confused after explanation, just move on (escape valve)
           return 'complete_subtopic';
       }
-      break;
   }
   
-  return 'continue_parent'; // Default: keep learning
+  return 'continue_conversation'; // Default: keep natural conversation going
 }
 
 // Update the reasoning generation to use contextual responses instead of template-based ones
@@ -630,30 +889,22 @@ function generateReasoningForAssessment(
   answerQuality: AnswerQuality,
   nextAction: NextAction,
   context: CarsonSessionContext,
-  specificGaps?: string
+  specificGaps?: string,
+  phase?: AssessmentPhase
 ): string {
   const currentSubtopic = context.subtopics[context.currentSubtopicIndex];
   const subtopicTitle = currentSubtopic?.title || "Unknown Subtopic";
 
   switch (nextAction) {
-    case 'continue_parent':
+    case 'continue_conversation':
       return generateContextualResponse('question', {
         subtopic: subtopicTitle,
-        questionType: 'parent',
+        questionType: 'follow_up',
         answerQuality: answerQuality,
         isStruggling: answerQuality === 'confused' || answerQuality === 'incorrect',
         specificGaps,
-        topic: context.topic
-      });
-
-    case 'ask_child':
-      return generateContextualResponse('question', {
-        subtopic: subtopicTitle,
-        questionType: 'child',
-        answerQuality: answerQuality,
-        isStruggling: false,
-        specificGaps,
-        topic: context.topic
+        topic: context.topic,
+        phase: phase
       });
 
     case 'give_cue':
@@ -711,15 +962,10 @@ export function updateSessionAfterAssessment(
     updates.correctAnswersInCurrentSubtopic = context.correctAnswersInCurrentSubtopic + 1;
   }
   
-  // Update subtopic state and question type based on next action
+  // Update subtopic state based on next action
   switch (assessment.nextAction) {
-    case 'continue_parent':
-      updates.currentQuestionType = 'parent';
-      updates.currentSubtopicState = 'assessing';
-      break;
-      
-    case 'ask_child':
-      updates.currentQuestionType = 'child';
+    case 'continue_conversation':
+      updates.currentQuestionType = 'follow_up';
       updates.currentSubtopicState = 'assessing';
       break;
       
@@ -773,6 +1019,7 @@ function generateContextualResponse(
     isStruggling?: boolean;
     specificGaps?: string; // Enhanced: what specifically was missing
     topic?: string; // Add topic for advanced questions
+    phase?: AssessmentPhase; // Current assessment phase
   }
 ): string {
   const { answerQuality, isStruggling, specificGaps, topic, subtopic } = context;

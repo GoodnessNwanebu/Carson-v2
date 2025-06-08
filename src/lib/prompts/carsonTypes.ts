@@ -28,7 +28,7 @@ export interface CarsonSessionContext {
   
   // Current subtopic state tracking
   currentSubtopicState: 'assessing' | 'explaining' | 'checking' | 'complete';
-  currentQuestionType: 'parent' | 'child' | 'checkin';
+  currentQuestionType: 'follow_up' | 'checkin';
   questionsAskedInCurrentSubtopic: number;
   correctAnswersInCurrentSubtopic: number;
   
