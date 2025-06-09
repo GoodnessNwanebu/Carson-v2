@@ -255,19 +255,20 @@ Keep it conversational - they're doing well with ${safeContext.topic}.
 
     case 'conclude_gracefully':
       return `
-You're Carson, concluding the conversation because the student has demonstrated solid understanding of ${safeContext.topic}.
+You're Carson, wrapping up because the student has shown they understand ${safeContext.topic}.
 
-**CONTEXT**: Student just gave a good synthesis response showing they understand ${safeContext.topic} comprehensively.
+They just gave you a decent synthesis. Time to acknowledge their work and finish naturally.
 
-Your approach:
-1. **Celebrate their mastery**: "Excellent! You clearly have a solid grasp of ${safeContext.topic}."
-2. **Acknowledge their growth**: "I can see you've really absorbed these concepts well."
-3. **Offer future exploration**: "When you're ready to dive deeper into related topics like [suggest related area], I'll be here."
-4. **Warm closure**: "Great work today!"
+**YOUR CONCLUSION SHOULD:**
+- Be brief and genuine (1-2 sentences max)
+- Acknowledge what they demonstrated well during this conversation
+- Use your natural voice - "Good stuff", "Right on", "Solid work", etc.
+- Reference ${safeContext.topic} specifically 
+- End warmly without asking questions
 
-Keep it warm and conclusive - they've earned this recognition.
+**CONVERSATION CONTEXT**: Look at what they actually struggled with or excelled at during your discussion. Make it personal to their learning journey.
 
-**IMPORTANT**: This is the END of the conversation. Don't ask more questions.
+**IMPORTANT**: This is the END. Don't ask follow-ups, don't suggest more topics. Just close warmly and naturally.
 `.trim();
 
     case 'assess_gaps':
@@ -340,14 +341,13 @@ Be encouraging and explain that connecting previous learning helps solidify unde
       return `
 You're Carson, checking if the student really understands ${safeContext.topic}.
 
-They've been through all the subtopics. Before wrapping up, see if they can:
-1. Synthesize: "How would you explain ${safeContext.topic} to a medical student in 2-3 minutes?"
-2. Apply: "Walk me through your approach to a complex ${safeContext.topic} case"
-3. Self-reflect: "What aspect of ${safeContext.topic} do you feel most confident about? Least confident?"
+They've been through all the subtopics. Time to see if they can put it all together.
 
-Only after they show they can synthesize and apply should you acknowledge they've got it.
+Ask something natural like: "Alright, you've covered a lot with ${safeContext.topic}. Before we wrap up - how would you explain this stuff to another med student? Like if they asked you about the key things to remember?"
 
-Keep it natural - you're a doctor checking if a student really knows their stuff.
+Keep it conversational. You're not giving them a formal exam - you're just checking if they can synthesize what they've learned in their own words.
+
+If they can explain it clearly and hit the main points, acknowledge they've got it and wrap up warmly.
 `.trim();
     } else {
       // **CARSON FIX**: Gap-driven transition logic instead of forced metacognition
@@ -1442,23 +1442,43 @@ function analyzeResponseContext(context: PromptContext): ResponseContext {
     );
     
     if (askedSynthesisQuestion) {
-      // Check if student's response shows comprehensive understanding
-      const comprehensiveIndicators = [
+      // **FIXED**: More lenient synthesis analysis to avoid infinite loops
+      const basicIndicators = [
+        studentText.length > 50, // Reasonable response length (lowered from 150)
+        context.topic && new RegExp(context.topic.split(' ').slice(0,2).join('|'), 'i').test(studentText), // Topic relevance
+        !/^(already did|i did|done|no|yes)\.?$/i.test(studentText.trim()) // Not a dismissive response
+      ];
+      
+      const advancedIndicators = [
         studentText.length > 150, // Substantial response
         /first.*second.*third|1.*2.*3/i.test(studentText), // Structured points
         /start.*then.*finally|begin.*next.*end/i.test(studentText), // Process description
         /important.*key.*essential/i.test(studentText), // Prioritization
         /because.*therefore.*so/i.test(studentText), // Causal reasoning
-        context.topic && new RegExp(context.topic.split(' ').slice(0,2).join('|'), 'i').test(studentText) // Topic relevance
+        /management|treatment|diagnosis|patient/i.test(studentText) // Medical concepts
       ];
       
-      const comprehensiveScore = comprehensiveIndicators.filter(Boolean).length;
+      const basicScore = basicIndicators.filter(Boolean).length;
+      const advancedScore = advancedIndicators.filter(Boolean).length;
       
-      if (comprehensiveScore >= 3) { // At least 3 indicators of good synthesis
+      // Much more lenient: Either hit all 3 basic requirements OR have 2+ advanced indicators
+      if (basicScore >= 3 || advancedScore >= 2) {
         return {
           type: 'confidence_expression',
           confidence: 95,
-          reasoning: 'Student provided comprehensive synthesis response showing mastery',
+          reasoning: 'Student provided adequate synthesis response - ready to conclude',
+          requiresDirectAnswer: false,
+          shouldTriggerGapAnalysis: false,
+          suggestedAction: 'conclude_gracefully'
+        };
+      }
+      
+      // **NEW**: Handle dismissive responses to avoid loops
+      if (basicScore === 2 && /^(already did|i did|done)\.?$/i.test(studentText.trim())) {
+        return {
+          type: 'confidence_expression',
+          confidence: 85,
+          reasoning: 'Student indicating they already provided synthesis - conclude to avoid loop',
           requiresDirectAnswer: false,
           shouldTriggerGapAnalysis: false,
           suggestedAction: 'conclude_gracefully'
