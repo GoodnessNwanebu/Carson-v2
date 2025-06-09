@@ -11,7 +11,7 @@ import { useSidebarState } from "../sidebar/sidebar-context"
 import { callLLM } from "@/lib/prompts/llm-service"
 import { CarsonSessionContext } from "@/lib/prompts/carsonTypes"
 import { v4 as uuidv4 } from 'uuid';
-import { assessUserResponse, AssessmentResult, ResponseType, updateSessionAfterAssessment } from "@/lib/prompts/assessmentEngine";
+import { assessUserResponseV2Parallel as assessUserResponse, AssessmentResult, ResponseType, updateSessionAfterAssessment } from "@/lib/prompts/assessmentEngine";
 import { CompletionCelebration } from "../knowledge-map/knowledge-map-animations";
 import { Button } from "@/components/ui/button"
 
@@ -159,7 +159,7 @@ export function Conversation({
           subtopics: [],
           currentSubtopicIndex: 0,
           history: [userMessage],
-          currentQuestionType: 'parent',
+          currentQuestionType: 'follow_up',
           questionsAskedInCurrentSubtopic: 0,
           correctAnswersInCurrentSubtopic: 0,
           currentSubtopicState: 'assessing',

@@ -20,7 +20,9 @@ interface CurrentSubtopic {
 }
 
 export function generatePrompt(context: PromptContext): string {
-  const currentSubtopic = context.subtopics[context.currentSubtopicIndex];
+  // Safety check for undefined currentSubtopicIndex
+  const subtopicIndex = context.currentSubtopicIndex ?? 0;
+  const currentSubtopic = context.subtopics?.[subtopicIndex];
 
   if (!currentSubtopic) {
     // No subtopics yet, so prompt the LLM to generate them with natural response
@@ -87,8 +89,8 @@ Be encouraging and explain that connecting previous learning helps solidify unde
 
   // Check if we should transition to next subtopic
   if (context.shouldTransition) {
-    const nextSubtopic = context.subtopics[context.currentSubtopicIndex + 1];
-    const isLastSubtopic = context.currentSubtopicIndex === context.subtopics.length - 1;
+    const nextSubtopic = context.subtopics?.[subtopicIndex + 1];
+    const isLastSubtopic = subtopicIndex === (context.subtopics?.length ?? 1) - 1;
     
     if (isLastSubtopic) {
       // **ENHANCED**: Final mastery validation before completion

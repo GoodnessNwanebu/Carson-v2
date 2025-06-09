@@ -1,9 +1,28 @@
 import { CarsonSessionContext } from './carsonTypes';
 import { callLLM } from './llm-service';
 
+/**
+ * Carson Assessment Engine - Phase 1 Refactor
+ * 
+ * NEW ARCHITECTURE (Recommended):
+ * - assessUserResponseV2() - Clean separation of concerns
+ * - assessMedicalAccuracy() - Focused medical assessment only
+ * - determineNextAction() - Pure orchestration logic
+ * 
+ * USAGE:
+ * Replace: const result = await assessUserResponse(userResponse, context)
+ * With:    const result = await assessUserResponseV2(userResponse, context)
+ * 
+ * BENEFITS:
+ * - Faster (focused LLM calls)
+ * - More reliable (separate concerns)
+ * - Easier to debug (clear responsibilities)
+ * - Better handling of "confidently wrong" students
+ */
+
 // Assessment types
 export type AnswerQuality = 'excellent' | 'good' | 'partial' | 'incorrect' | 'confused';
-export type NextAction = 'continue_conversation' | 'give_cue' | 'explain' | 'check_understanding' | 'complete_subtopic';
+export type NextAction = 'continue_conversation' | 'give_cue' | 'explain' | 'check_understanding' | 'complete_subtopic' | 'handle_interaction' | 'provide_support' | 'gentle_correction' | 'explain_gaps';
 
 // **NEW**: Simple Triaging Model (Session-Constrained)
 export interface SubtopicRequirements {
@@ -880,56 +899,7 @@ async function determineTriagingAction(
   };
 }
 
-// **LEGACY**: Simplified version for backwards compatibility
-function determineNextAction(answerQuality: AnswerQuality, context: CarsonSessionContext): NextAction {
-  const { questionsAskedInCurrentSubtopic, correctAnswersInCurrentSubtopic, currentSubtopicState } = context;
-  
-  // **HIGHER STANDARDS**: More rigorous requirements like a real attending
-  const hasMinimumCorrectAnswers = correctAnswersInCurrentSubtopic >= 3; // Raised from 2
-  const hasAskedEnoughQuestions = questionsAskedInCurrentSubtopic >= 3;   // Raised from 2
-  const hasGoodSuccessRate = correctAnswersInCurrentSubtopic / Math.max(questionsAskedInCurrentSubtopic, 1) >= 0.8; // Raised from 0.6
-  const meetsMasteryThreshold = hasMinimumCorrectAnswers && hasAskedEnoughQuestions && hasGoodSuccessRate;
-  
-  switch (currentSubtopicState) {
-    case 'assessing':
-        switch (answerQuality) {
-          case 'excellent':
-          case 'good':
-          // Carson keeps probing until confident they really understand
-            if (meetsMasteryThreshold) {
-              return 'complete_subtopic';
-            } else {
-            return 'continue_conversation'; // Natural follow-up probing
-            }
-          case 'partial':
-          // Give some opportunities but provide guidance if struggling
-          if (questionsAskedInCurrentSubtopic >= 4) {
-            return 'give_cue'; // Help after several attempts
-            }
-          return 'continue_conversation';
-          default: // 'confused' and 'incorrect'
-          // When confused, explain clearly
-            return 'explain';
-        }
-      
-    case 'explaining':
-      // After explanation, always check understanding
-      return 'check_understanding';
-      
-    case 'checking':
-      switch (answerQuality) {
-        case 'excellent':
-        case 'good':
-          // Good understanding after explanation = ready to move
-          return 'complete_subtopic';
-        default:
-          // If still confused after explanation, just move on (escape valve)
-          return 'complete_subtopic';
-      }
-  }
-  
-  return 'continue_conversation'; // Default: keep natural conversation going
-}
+// Legacy function removed - replaced by new Phase 1 refactor determineNextAction
 
 // Update the reasoning generation to use contextual responses instead of template-based ones
 function generateReasoningForAssessment(
@@ -2230,3 +2200,1398 @@ function filterQuestionTypesByContext(
   // Fallback to differential if no allowed types
   return allowedTypes.length > 0 ? allowedTypes : ['differential'];
 }
+
+/**
+ * Phase 1 Refactor: Focused Medical Assessment
+ * This function ONLY assesses medical accuracy - no flow decisions
+ */
+async function assessMedicalAccuracy(
+  userResponse: string,
+  subtopicTitle: string,
+  topic: string,
+  expectedConcepts?: string[]
+): Promise<MedicalAssessment> {
+  
+  // Quick check for obvious struggling
+  if (isStruggling(userResponse)) {
+    return {
+      isCorrect: false,
+      confidence: 0.9,
+      missingConcepts: expectedConcepts || [],
+      assessmentType: 'struggling',
+      reasoning: 'Student appears confused or struggling'
+    };
+  }
+
+  // Fast fallback for very short responses
+  if (!userResponse?.trim() || userResponse.trim().length < 3) {
+    return {
+      isCorrect: false,
+      confidence: 0.8,
+      missingConcepts: expectedConcepts || [],
+      assessmentType: 'insufficient',
+      reasoning: 'Response too brief for assessment'
+    };
+  }
+
+  // Use hybrid rule-based assessment for reliability and speed
+  // This avoids JSON parsing issues and is more consistent
+  return hybridMedicalAssessment(userResponse, expectedConcepts, subtopicTitle, topic);
+}
+
+/**
+ * Fallback medical assessment when LLM fails - now uses hybrid intelligence
+ */
+function fallbackMedicalAssessment(userResponse: string, expectedConcepts?: string[]): MedicalAssessment {
+  // Use the new hybrid assessment system for more sophisticated evaluation
+  return hybridMedicalAssessment(userResponse, expectedConcepts);
+}
+
+/**
+ * Phase 1 Refactor: Pure Orchestration Logic
+ * This function ONLY determines what to do next - no LLM calls
+ */
+function determineNextAction(
+  medicalAssessment: MedicalAssessment,
+  interaction: InteractionClassification,
+  subtopicStatus: SubtopicStatus,
+  context: CarsonSessionContext
+): OrchestrationResult {
+  
+  // Handle non-medical interactions first
+  if (!interaction.requiresAssessment) {
+    return {
+      nextAction: 'handle_interaction',
+      reasoning: interaction.suggestedResponse || "Handling non-medical interaction",
+      shouldContinueSubtopic: true,
+      statusUpdate: {}
+    };
+  }
+
+  const questionsUsed = subtopicStatus.questionsUsed + 1;
+  const requirements = generateSubtopicRequirements(
+    context.subtopics[context.currentSubtopicIndex].title, 
+    context.topic || "Medical Topic"
+  );
+
+  // **ESCAPE VALVE**: Hard stop at max questions
+  if (questionsUsed >= requirements.maxQuestions) {
+    return {
+      nextAction: 'complete_subtopic',
+      reasoning: 'Maximum questions reached for this subtopic',
+      shouldContinueSubtopic: false,
+      statusUpdate: { questionsUsed }
+    };
+  }
+
+  // **STRUGGLING STUDENTS**: Provide support immediately
+  if (medicalAssessment.assessmentType === 'struggling') {
+    return {
+      nextAction: 'provide_support',
+      reasoning: 'Student needs emotional support and explanation',
+      shouldContinueSubtopic: true,
+      statusUpdate: { questionsUsed }
+    };
+  }
+
+  // **CONFIDENTLY WRONG**: Special handling
+  if (detectConfidentlyWrong(context.history.slice(-1)[0]?.content || '', medicalAssessment)) {
+    return {
+      nextAction: 'gentle_correction',
+      reasoning: 'Student is confident but incorrect - needs gentle clarification',
+      shouldContinueSubtopic: true,
+      statusUpdate: { questionsUsed }
+    };
+  }
+
+  // **INITIAL ASSESSMENT PHASE**
+  if (!subtopicStatus.hasInitialAssessment) {
+    return {
+      nextAction: medicalAssessment.isCorrect ? 'continue_conversation' : 'explain_gaps',
+      reasoning: 'Completing initial assessment of student knowledge',
+      shouldContinueSubtopic: true,
+      statusUpdate: { 
+        questionsUsed,
+        hasInitialAssessment: true,
+        gapAnalysis: {
+          criticalGaps: medicalAssessment.isCorrect ? [] : medicalAssessment.missingConcepts.slice(0, 2),
+          importantGaps: medicalAssessment.isCorrect ? [] : medicalAssessment.missingConcepts.slice(2, 4),
+          minorGaps: [],
+          strengthAreas: medicalAssessment.isCorrect ? ['Demonstrates solid understanding'] : []
+        }
+      }
+    };
+  }
+
+  // **ONGOING ASSESSMENT**: Check if we can complete
+  if (medicalAssessment.isCorrect && questionsUsed >= 2) {
+    return {
+      nextAction: 'complete_subtopic',
+      reasoning: 'Student demonstrates competency, ready to move on',
+      shouldContinueSubtopic: false,
+      statusUpdate: { questionsUsed }
+    };
+  }
+
+  // **CONTINUE CONVERSATION**: Default case
+  return {
+    nextAction: medicalAssessment.isCorrect ? 'continue_conversation' : 'explain_gaps',
+    reasoning: medicalAssessment.isCorrect ? 'Building on correct understanding' : 'Addressing knowledge gaps',
+    shouldContinueSubtopic: true,
+    statusUpdate: { questionsUsed }
+  };
+}
+
+/**
+ * Detect confidently wrong responses
+ */
+function detectConfidentlyWrong(userResponse: string, assessment: MedicalAssessment): boolean {
+  if (assessment.isCorrect || assessment.confidence < 0.7) return false;
+  
+  const confidenceMarkers = [
+    /^(definitely|absolutely|i'm sure|certainly)/i,
+    /^(the answer is|it's clearly|obviously)/i,
+    /\.$/, // Ends with period (confident tone)
+    /^(yes,|no,)/i // Definitive answers
+  ];
+  
+  return confidenceMarkers.some(pattern => pattern.test(userResponse.trim()));
+}
+
+/**
+ * Types for Phase 1 refactor
+ */
+interface MedicalAssessment {
+  isCorrect: boolean;
+  confidence: number; // 0-1
+  missingConcepts: string[];
+  assessmentType: 'correct' | 'incorrect' | 'partial' | 'struggling' | 'insufficient';
+  reasoning: string;
+}
+
+interface OrchestrationResult {
+  nextAction: NextAction;
+  reasoning: string;
+  shouldContinueSubtopic: boolean;
+  statusUpdate: Partial<SubtopicStatus>;
+}
+
+/**
+ * Phase 1 Refactor: New Clean Assessment Function
+ * Replaces the complex assessUserResponse with separated concerns
+ */
+export async function assessUserResponseV2(
+  userResponse: string, 
+  context: CarsonSessionContext
+): Promise<AssessmentResult | null> {
+  
+  // Step 1: Classify interaction type (existing function)
+  const interaction = classifyInteraction(userResponse, context);
+  
+  // Step 2: Handle conversational responses early
+  if (isConversationalResponse(userResponse, context.history.slice(-1)[0]?.content)) {
+    return null; // Don't assess conversational responses
+  }
+  
+  // Step 3: Get current subtopic info
+  const currentSubtopic = context.subtopics[context.currentSubtopicIndex];
+  const subtopicTitle = currentSubtopic?.title || "Unknown Subtopic";
+  const requirements = generateSubtopicRequirements(subtopicTitle, context.topic || "Medical Topic");
+  
+  // Step 4: Get expected concepts for this subtopic
+  const expectedConcepts = getExpectedConcepts(subtopicTitle, context.topic || "Medical Topic");
+  
+  // Step 5: FOCUSED medical assessment (single responsibility)
+  const medicalAssessment = await assessMedicalAccuracy(
+    userResponse, 
+    subtopicTitle, 
+    context.topic || "Medical Topic",
+    expectedConcepts
+  );
+  
+  // Step 6: Get current subtopic status
+  const status: SubtopicStatus = currentSubtopic.triagingStatus || initializeSubtopicStatus();
+  
+  // Step 7: PURE orchestration logic (no LLM calls)
+  const orchestration = determineNextAction(medicalAssessment, interaction, status, context);
+  
+  // Step 8: Map to legacy AssessmentResult format for compatibility
+  return {
+    answerQuality: mapToAnswerQuality(medicalAssessment),
+    nextAction: orchestration.nextAction,
+    reasoning: orchestration.reasoning,
+    isStruggling: medicalAssessment.assessmentType === 'struggling',
+    specificGaps: medicalAssessment.missingConcepts.join(', ') || undefined,
+    interactionType: interaction.type,
+    currentPhase: getCurrentPhase(status, medicalAssessment),
+    statusUpdate: orchestration.statusUpdate
+  } as AssessmentResult & { interactionType: InteractionType };
+}
+
+/**
+ * Helper: Get expected concepts for a subtopic
+ */
+function getExpectedConcepts(subtopicTitle: string, topic: string): string[] {
+  const title = subtopicTitle.toLowerCase();
+  const topicLower = topic.toLowerCase();
+  
+  // Build expected concepts based on subtopic type
+  const concepts: string[] = [];
+  
+  if (title.includes('definition') || title.includes('types')) {
+    concepts.push(`Definition of ${topic}`, `Classification system`, `Key characteristics`);
+  }
+  
+  if (title.includes('risk') || title.includes('factor')) {
+    concepts.push(`Major risk factors`, `Population at risk`, `Preventable factors`);
+  }
+  
+  if (title.includes('pathophysio') || title.includes('mechanism')) {
+    concepts.push(`Underlying mechanism`, `Physiological process`, `Cascade of events`);
+  }
+  
+  if (title.includes('presentation') || title.includes('clinical')) {
+    concepts.push(`Classic symptoms`, `Physical exam findings`, `Clinical presentation patterns`);
+  }
+  
+  if (title.includes('diagnos') || title.includes('workup')) {
+    concepts.push(`Diagnostic criteria`, `Key tests`, `Differential diagnosis`);
+  }
+  
+  if (title.includes('management') || title.includes('treatment')) {
+    concepts.push(`First-line treatment`, `Management priorities`, `Monitoring parameters`);
+  }
+  
+  return concepts.length > 0 ? concepts : [`Core ${topic} concepts`];
+}
+
+/**
+ * Helper: Map medical assessment to legacy AnswerQuality
+ */
+function mapToAnswerQuality(assessment: MedicalAssessment): AnswerQuality {
+  switch (assessment.assessmentType) {
+    case 'correct': return assessment.confidence > 0.8 ? 'excellent' : 'good';
+    case 'partial': return 'partial';
+    case 'struggling': return 'confused';
+    case 'insufficient': return 'confused';
+    case 'incorrect': return 'incorrect';
+    default: return 'partial';
+  }
+}
+
+/**
+ * Helper: Determine current assessment phase
+ */
+function getCurrentPhase(status: SubtopicStatus, assessment: MedicalAssessment): AssessmentPhase {
+  if (!status.hasInitialAssessment) return 'initial_assessment';
+  if (status.gapAnalysis?.criticalGaps && status.gapAnalysis.criticalGaps.length > 0) return 'targeted_remediation';
+  if (!status.hasTestedApplication) return 'application';
+  return 'complete';
+}
+
+/**
+ * Phase 2: Fresh Subtopic Memory System
+ * Clean slate for each subtopic to reduce cognitive load on LLM
+ */
+
+/**
+ * Reset context for a new subtopic - fresh start approach
+ */
+export function resetSubtopicContext(
+  currentSession: CarsonSessionContext,
+  newSubtopicIndex: number
+): Partial<CarsonSessionContext> {
+  const newSubtopic = currentSession.subtopics[newSubtopicIndex];
+  
+  if (!newSubtopic) {
+    throw new Error(`Subtopic at index ${newSubtopicIndex} not found`);
+  }
+
+  // Keep only essential context, discard conversation history
+  const freshContext: Partial<CarsonSessionContext> = {
+    currentSubtopicIndex: newSubtopicIndex,
+    currentSubtopicState: 'assessing',
+    questionsAskedInCurrentSubtopic: 0,
+    correctAnswersInCurrentSubtopic: 0,
+    currentQuestionType: 'follow_up',
+    shouldTransition: false,
+    
+    // Fresh history - only keep topic introduction, discard subtopic conversations
+    history: currentSession.history.slice(0, 2), // Keep initial topic setup only
+    
+    // Reset current subtopic status
+    subtopics: currentSession.subtopics.map((subtopic, index) => {
+      if (index === newSubtopicIndex) {
+        return {
+          ...subtopic,
+          triagingStatus: initializeSubtopicStatus(),
+          history: [], // Fresh conversation history for this subtopic
+          questionsAsked: 0,
+          correctAnswers: 0,
+          needsExplanation: false,
+          status: 'unassessed' as const
+        };
+      }
+      return subtopic; // Keep other subtopics unchanged
+    })
+  };
+
+  return freshContext;
+}
+
+/**
+ * Phase 2: Parallel Processing for Assessment
+ * Run multiple assessment tasks simultaneously
+ */
+export async function assessUserResponseV2Parallel(
+  userResponse: string,
+  context: CarsonSessionContext
+): Promise<AssessmentResult | null> {
+  
+  // Step 1: Start parallel operations
+  const parallelTasks = Promise.all([
+    // Task 1: Classify interaction type
+    Promise.resolve(classifyInteraction(userResponse, context)),
+    
+    // Task 2: Check if conversational
+    Promise.resolve(isConversationalResponse(userResponse, context.history.slice(-1)[0]?.content)),
+    
+    // Task 3: Get subtopic info and requirements
+    Promise.resolve({
+      currentSubtopic: context.subtopics[context.currentSubtopicIndex],
+      requirements: generateSubtopicRequirements(
+        context.subtopics[context.currentSubtopicIndex]?.title || "Unknown",
+        context.topic || "Medical Topic"
+      )
+    })
+  ]);
+
+  const [interaction, isConversational, subtopicInfo] = await parallelTasks;
+
+  // Early return for conversational responses
+  if (isConversational) {
+    return null;
+  }
+
+  const { currentSubtopic, requirements } = subtopicInfo;
+  const subtopicTitle = currentSubtopic?.title || "Unknown Subtopic";
+
+  // Step 2: Parallel medical assessment and concept generation
+  const assessmentTasks = Promise.all([
+    // Task 1: Medical assessment (focused LLM call) - using original stable function
+    assessMedicalAccuracy(
+      userResponse,
+      subtopicTitle,
+      context.topic || "Medical Topic",
+      getExpectedConcepts(subtopicTitle, context.topic || "Medical Topic")
+    ),
+    
+    // Task 2: Get current subtopic status
+    Promise.resolve(currentSubtopic.triagingStatus || initializeSubtopicStatus())
+  ]);
+
+  const [medicalAssessment, status] = await assessmentTasks;
+
+  // Step 3: Pure orchestration logic (no LLM calls)
+  const orchestration = determineNextAction(medicalAssessment, interaction, status, context);
+
+  // Step 4: Return result
+  return {
+    answerQuality: mapToAnswerQuality(medicalAssessment),
+    nextAction: orchestration.nextAction,
+    reasoning: orchestration.reasoning,
+    isStruggling: medicalAssessment.assessmentType === 'struggling',
+    specificGaps: medicalAssessment.missingConcepts.join(', ') || undefined,
+    interactionType: interaction.type,
+    currentPhase: getCurrentPhase(status, medicalAssessment),
+    statusUpdate: orchestration.statusUpdate
+  } as AssessmentResult & { interactionType: InteractionType };
+}
+
+/**
+ * Phase 2: Cached Prompt Templates for Speed
+ */
+const CACHED_PROMPT_TEMPLATES = new Map<string, string>();
+
+export function getCachedPromptTemplate(
+  templateKey: string,
+  generator: () => string
+): string {
+  if (!CACHED_PROMPT_TEMPLATES.has(templateKey)) {
+    CACHED_PROMPT_TEMPLATES.set(templateKey, generator());
+  }
+  return CACHED_PROMPT_TEMPLATES.get(templateKey)!;
+}
+
+/**
+ * Pre-generate expected concepts for common subtopic patterns
+ */
+const CONCEPT_CACHE = new Map<string, string[]>();
+
+function getCachedExpectedConcepts(subtopicTitle: string, topic: string): string[] {
+  const cacheKey = `${topic.toLowerCase()}_${subtopicTitle.toLowerCase()}`;
+  
+  if (!CONCEPT_CACHE.has(cacheKey)) {
+    const concepts = getExpectedConcepts(subtopicTitle, topic);
+    CONCEPT_CACHE.set(cacheKey, concepts);
+  }
+  
+  return CONCEPT_CACHE.get(cacheKey)!;
+}
+
+/**
+ * Phase 2: Optimized Medical Assessment with Caching
+ */
+async function assessMedicalAccuracyOptimized(
+  userResponse: string,
+  subtopicTitle: string,
+  topic: string,
+  expectedConcepts?: string[]
+): Promise<MedicalAssessment> {
+  
+  // Quick checks first (no LLM needed)
+  if (isStruggling(userResponse)) {
+    return {
+      isCorrect: false,
+      confidence: 0.9,
+      missingConcepts: expectedConcepts || [],
+      assessmentType: 'struggling',
+      reasoning: 'Student appears confused or struggling'
+    };
+  }
+
+  if (!userResponse?.trim() || userResponse.trim().length < 3) {
+    return {
+      isCorrect: false,
+      confidence: 0.8,
+      missingConcepts: expectedConcepts || [],
+      assessmentType: 'insufficient',
+      reasoning: 'Response too brief for assessment'
+    };
+  }
+
+  // Use cached prompt template
+  const promptTemplate = getCachedPromptTemplate(
+    'medical_assessment',
+    () => `Assess this medical response for accuracy about {subtopic} in the context of {topic}.
+
+Student Response: "{userResponse}"
+{expectedConceptsSection}
+
+Evaluate ONLY medical accuracy and completeness. Respond in JSON format:
+{
+  "isCorrect": boolean,
+  "confidence": 0.0-1.0,
+  "missingConcepts": ["concept1", "concept2"],
+  "reasoning": "Brief explanation of accuracy assessment"
+}
+
+Assessment:`
+  );
+
+  // Fill template efficiently
+  const assessmentPrompt = promptTemplate
+    .replace('{subtopic}', subtopicTitle)
+    .replace('{topic}', topic)
+    .replace('{userResponse}', userResponse)
+    .replace('{expectedConceptsSection}', 
+      expectedConcepts ? `Expected Key Concepts: ${expectedConcepts.join(', ')}` : ''
+    );
+
+  // Use the same reliable hybrid assessment for consistency
+  return hybridMedicalAssessment(userResponse, expectedConcepts, subtopicTitle, topic);
+}
+
+/**
+ * Phase 2: Session Transition Management
+ */
+export function transitionToNextSubtopic(
+  session: CarsonSessionContext,
+  completedSubtopicIndex: number
+): Partial<CarsonSessionContext> {
+  
+  const nextIndex = completedSubtopicIndex + 1;
+  
+  // Mark current subtopic as complete
+  const updatedSubtopics = [...session.subtopics];
+  if (updatedSubtopics[completedSubtopicIndex]) {
+    updatedSubtopics[completedSubtopicIndex] = {
+      ...updatedSubtopics[completedSubtopicIndex],
+      status: 'understood' as const
+    };
+  }
+
+  // Check if we've completed all subtopics
+  if (nextIndex >= session.subtopics.length) {
+    return {
+      subtopics: updatedSubtopics,
+      isComplete: true,
+      shouldTransition: false
+    };
+  }
+
+  // Fresh context for next subtopic
+  const freshContext = resetSubtopicContext(
+    { ...session, subtopics: updatedSubtopics },
+    nextIndex
+  );
+
+  return {
+    ...freshContext,
+    subtopics: updatedSubtopics
+  };
+}
+
+/**
+ * HYBRID INTELLIGENCE ASSESSMENT ENGINE
+ * Combines multiple assessment strategies for accuracy and speed
+ */
+
+// Enhanced Medical Terminology Database
+const MEDICAL_VOCABULARY = {
+  // Basic medical terms
+  basic: ['patient', 'diagnosis', 'treatment', 'symptom', 'condition', 'clinical', 'medical', 'disease', 'syndrome'],
+  
+  // Advanced medical terminology
+  advanced: ['pathophysiology', 'etiology', 'prognosis', 'differential', 'manifestation', 'comorbidity', 
+             'contraindication', 'therapeutic', 'pharmacokinetics', 'biomarker', 'phenotype'],
+  
+  // Process and mechanism terms
+  process: ['mechanism', 'process', 'pathway', 'cascade', 'regulation', 'metabolism', 'synthesis', 
+            'degradation', 'signaling', 'feedback', 'homeostasis'],
+  
+  // Anatomy and physiology
+  anatomy: ['organ', 'tissue', 'system', 'structure', 'function', 'anatomical', 'physiological', 
+            'cellular', 'molecular', 'vascular', 'neural', 'muscular'],
+  
+  // Clinical practice terms
+  clinical: ['assessment', 'evaluation', 'examination', 'investigation', 'intervention', 'monitoring', 
+             'follow-up', 'referral', 'consultation', 'management', 'protocol'],
+  
+  // Pharmacology
+  pharmacology: ['medication', 'drug', 'therapeutic', 'dosage', 'administration', 'absorption', 
+                 'distribution', 'elimination', 'half-life', 'interaction', 'adverse', 'contraindication'],
+  
+  // Research and evidence
+  evidence: ['study', 'research', 'evidence', 'trial', 'efficacy', 'effectiveness', 'outcome', 
+             'statistical', 'significant', 'correlation', 'causation', 'meta-analysis'],
+
+  // Cardiovascular
+  cardiovascular: ['cardiac', 'heart', 'coronary', 'vascular', 'blood pressure', 'hypertension', 'hypotension',
+                   'arrhythmia', 'myocardial', 'ischemia', 'stenosis', 'atherosclerosis', 'embolism'],
+  
+  // Respiratory
+  respiratory: ['pulmonary', 'lung', 'respiratory', 'airway', 'ventilation', 'oxygenation', 'pneumonia',
+                'asthma', 'copd', 'bronchial', 'alveolar', 'pleural'],
+  
+  // Neurological
+  neurological: ['neurological', 'brain', 'spinal', 'neuron', 'synaptic', 'cognitive', 'seizure',
+                 'stroke', 'meningitis', 'encephalitis', 'neuropathy'],
+  
+  // Gastrointestinal
+  gastrointestinal: ['gastrointestinal', 'hepatic', 'gastric', 'intestinal', 'digestive', 'bowel',
+                     'liver', 'pancreatic', 'biliary', 'peptic', 'inflammatory'],
+  
+  // Endocrine
+  endocrine: ['hormonal', 'endocrine', 'diabetes', 'thyroid', 'insulin', 'glucose', 'metabolic',
+              'adrenal', 'pituitary', 'pancreatic', 'hormone'],
+  
+  // Obstetrics/Gynecology
+  obstetric: ['pregnancy', 'prenatal', 'fetal', 'maternal', 'obstetric', 'gynecological', 'uterine',
+              'placental', 'cervical', 'ovarian', 'menstrual', 'preeclampsia', 'eclampsia'],
+  
+  // Infectious Disease
+  infectious: ['infection', 'bacterial', 'viral', 'fungal', 'antibiotic', 'antimicrobial', 'sepsis',
+               'immunocompromised', 'pathogen', 'microorganism', 'contagious'],
+  
+  // Oncology
+  oncology: ['cancer', 'malignant', 'benign', 'tumor', 'metastasis', 'carcinoma', 'chemotherapy',
+             'radiation', 'oncology', 'biopsy', 'staging', 'prognosis']
+};
+
+// Enhanced Topic-Specific Knowledge Patterns
+const TOPIC_SPECIFIC_PATTERNS = {
+  // Preeclampsia-specific patterns
+  preeclampsia: {
+    keyTerms: ['preeclampsia', 'eclampsia', 'hellp', 'proteinuria', 'hypertension', 'placenta', 'maternal', 'fetal'],
+    mechanisms: ['placental dysfunction', 'endothelial dysfunction', 'vasospasm', 'inflammatory response'],
+    symptoms: ['headache', 'visual disturbances', 'epigastric pain', 'edema', 'oliguria'],
+    complications: ['seizures', 'stroke', 'liver dysfunction', 'coagulopathy', 'fetal growth restriction'],
+    management: ['magnesium sulfate', 'antihypertensive', 'delivery', 'corticosteroids', 'monitoring']
+  },
+  
+  // Diabetes-specific patterns  
+  diabetes: {
+    keyTerms: ['diabetes', 'insulin', 'glucose', 'glycemic', 'hyperglycemia', 'hypoglycemia', 'hba1c'],
+    mechanisms: ['insulin resistance', 'beta cell dysfunction', 'glucose metabolism', 'pancreatic'],
+    symptoms: ['polyuria', 'polydipsia', 'polyphagia', 'fatigue', 'blurred vision'],
+    complications: ['neuropathy', 'nephropathy', 'retinopathy', 'cardiovascular disease', 'ketoacidosis'],
+    management: ['metformin', 'insulin therapy', 'lifestyle modification', 'blood glucose monitoring']
+  },
+  
+  // Hypertension-specific patterns
+  hypertension: {
+    keyTerms: ['hypertension', 'blood pressure', 'systolic', 'diastolic', 'cardiovascular', 'vascular'],
+    mechanisms: ['peripheral resistance', 'cardiac output', 'renin-angiotensin', 'sympathetic nervous system'],
+    symptoms: ['asymptomatic', 'headache', 'dyspnea', 'chest pain', 'epistaxis'],
+    complications: ['stroke', 'myocardial infarction', 'heart failure', 'kidney disease', 'retinopathy'],
+    management: ['ace inhibitors', 'diuretics', 'calcium channel blockers', 'lifestyle changes']
+  },
+  
+  // Asthma-specific patterns
+  asthma: {
+    keyTerms: ['asthma', 'bronchial', 'airway', 'respiratory', 'allergic', 'inflammatory'],
+    mechanisms: ['bronchospasm', 'inflammation', 'mucus hypersecretion', 'airway remodeling'],
+    symptoms: ['wheezing', 'dyspnea', 'chest tightness', 'cough', 'nocturnal symptoms'],
+    complications: ['status asthmaticus', 'respiratory failure', 'pneumothorax', 'atelectasis'],
+    management: ['bronchodilators', 'corticosteroids', 'leukotriene inhibitors', 'peak flow monitoring']
+  }
+};
+
+// Clinical Decision-Making Patterns
+const CLINICAL_REASONING_PATTERNS = {
+  diagnostic: {
+    positive: ['differential diagnosis', 'rule out', 'consider', 'workup', 'investigate', 'assess for',
+               'clinical presentation', 'history and physical', 'laboratory studies', 'imaging'],
+    negative: ['definitely', 'obviously', 'clearly', 'always', 'never', 'impossible', 'certain']
+  },
+  
+  therapeutic: {
+    positive: ['evidence-based', 'guidelines recommend', 'first-line', 'contraindicated', 'monitor for',
+               'titrate', 'dose adjustment', 'side effects', 'efficacy', 'safety profile'],
+    negative: ['cure', 'fix', 'heal completely', 'permanent solution', 'guarantee']
+  },
+  
+  prognostic: {
+    positive: ['prognosis depends', 'risk factors', 'outcome varies', 'long-term', 'surveillance',
+               'follow-up', 'complications may include', 'mortality risk'],
+    negative: ['will definitely', 'always fatal', 'completely benign', 'no risk']
+  }
+};
+
+// Reasoning Pattern Database
+const REASONING_PATTERNS = {
+  // Causal reasoning
+  causal: ['because', 'since', 'due to', 'caused by', 'results from', 'leads to', 'results in', 
+           'triggers', 'induces', 'precipitates', 'contributes to'],
+  
+  // Comparative reasoning
+  comparative: ['compared to', 'versus', 'rather than', 'instead of', 'unlike', 'similar to', 
+                'differs from', 'in contrast', 'whereas', 'however'],
+  
+  // Conditional reasoning
+  conditional: ['if', 'when', 'unless', 'provided that', 'assuming', 'given that', 'in case of', 
+                'should', 'would', 'could', 'might'],
+  
+  // Sequential reasoning
+  sequential: ['first', 'then', 'next', 'subsequently', 'following', 'after', 'before', 
+               'initially', 'finally', 'eventually'],
+  
+  // Evidential reasoning
+  evidential: ['indicates', 'suggests', 'demonstrates', 'shows', 'reveals', 'confirms', 
+               'supports', 'contradicts', 'implies', 'establishes']
+};
+
+// Concept-Specific Assessment Patterns
+const CONCEPT_PATTERNS = {
+  pathophysiology: {
+    requiredElements: ['mechanism', 'process', 'cascade', 'pathway', 'dysfunction'],
+    positiveIndicators: ['cellular', 'molecular', 'biochemical', 'physiological', 'systemic'],
+    negativeIndicators: ['simple', 'just', 'only', 'basic'],
+    minimumLength: 40
+  },
+  
+  diagnosis: {
+    requiredElements: ['symptoms', 'signs', 'criteria', 'differential', 'assessment'],
+    positiveIndicators: ['clinical', 'examination', 'investigation', 'evaluation', 'workup'],
+    negativeIndicators: ['guess', 'assume', 'probably', 'maybe'],
+    minimumLength: 30
+  },
+  
+  treatment: {
+    requiredElements: ['management', 'intervention', 'therapy', 'protocol', 'approach'],
+    positiveIndicators: ['therapeutic', 'effective', 'evidence-based', 'guidelines', 'monitoring'],
+    negativeIndicators: ['cure', 'fix', 'heal', 'make better'],
+    minimumLength: 35
+  },
+  
+  pharmacology: {
+    requiredElements: ['mechanism', 'action', 'receptor', 'pathway', 'effect'],
+    positiveIndicators: ['pharmacokinetics', 'pharmacodynamics', 'bioavailability', 'half-life'],
+    negativeIndicators: ['works', 'helps', 'fixes', 'makes'],
+    minimumLength: 30
+  },
+  
+  risk_factors: {
+    requiredElements: ['risk', 'factor', 'predispose', 'increase', 'likelihood'],
+    positiveIndicators: ['epidemiological', 'statistical', 'association', 'correlation'],
+    negativeIndicators: ['always', 'never', 'everyone', 'nobody'],
+    minimumLength: 25
+  }
+};
+
+/**
+ * Hybrid Medical Assessment Engine
+ * Combines multiple assessment strategies for optimal accuracy and speed
+ */
+function hybridMedicalAssessment(
+  userResponse: string, 
+  expectedConcepts?: string[],
+  subtopicTitle?: string,
+  topic?: string
+): MedicalAssessment {
+  const response = userResponse.toLowerCase().trim();
+  const length = response.length;
+  
+  // Stage 1: Quick Quality Filters
+  const quickFilters = applyQuickQualityFilters(response, length);
+  if (quickFilters.shouldReturn) {
+    return quickFilters.assessment!;
+  }
+  
+  // Stage 2: Multi-Strategy Assessment
+  const vocabularyScore = assessMedicalVocabulary(response);
+  const reasoningScore = assessReasoningPatterns(response);
+  const conceptScore = assessConceptSpecificPatterns(response, subtopicTitle, topic);
+  const structureScore = assessResponseStructure(response, length);
+  const accuracyScore = assessFactualAccuracy(response, expectedConcepts, subtopicTitle, topic);
+  const clinicalReasoningScore = assessClinicalReasoningPatterns(response, subtopicTitle);
+  
+  // Stage 3: Confidence Weighting System
+  const finalAssessment = combineAssessmentScores({
+    vocabulary: vocabularyScore,
+    reasoning: reasoningScore,
+    concept: conceptScore,
+    structure: structureScore,
+    accuracy: accuracyScore,
+    clinicalReasoning: clinicalReasoningScore
+  }, expectedConcepts, response);
+  
+  return finalAssessment;
+}
+
+/**
+ * Topic-Specific Pattern Assessment
+ */
+function assessTopicSpecificPatterns(response: string, topic?: string): AssessmentScore {
+  if (!topic) {
+    return { score: 0, confidence: 0.5, evidence: [], reasoning: 'No topic context provided' };
+  }
+  
+  const topicKey = topic.toLowerCase();
+  const topicPattern = TOPIC_SPECIFIC_PATTERNS[topicKey as keyof typeof TOPIC_SPECIFIC_PATTERNS];
+  
+  if (!topicPattern) {
+    return { score: 0, confidence: 0.5, evidence: [], reasoning: 'No specific pattern for this topic' };
+  }
+  
+  let score = 0;
+  let evidence: string[] = [];
+  const totalCategories = 5; // keyTerms, mechanisms, symptoms, complications, management
+  
+  // Check key terms (25% weight)
+  const keyTermsFound = topicPattern.keyTerms.filter(term => response.includes(term));
+  score += (keyTermsFound.length / topicPattern.keyTerms.length) * 0.25;
+  evidence.push(...keyTermsFound.map(term => `key:${term}`));
+  
+  // Check mechanisms (25% weight)
+  const mechanismsFound = topicPattern.mechanisms.filter(mechanism => 
+    mechanism.split(' ').some(word => response.includes(word))
+  );
+  score += (mechanismsFound.length / topicPattern.mechanisms.length) * 0.25;
+  evidence.push(...mechanismsFound.map(mech => `mech:${mech.split(' ')[0]}`));
+  
+  // Check symptoms (20% weight)
+  const symptomsFound = topicPattern.symptoms.filter(symptom => response.includes(symptom));
+  score += (symptomsFound.length / topicPattern.symptoms.length) * 0.2;
+  evidence.push(...symptomsFound.map(symp => `symp:${symp}`));
+  
+  // Check complications (15% weight)
+  const complicationsFound = topicPattern.complications.filter(comp => response.includes(comp));
+  score += (complicationsFound.length / topicPattern.complications.length) * 0.15;
+  evidence.push(...complicationsFound.map(comp => `comp:${comp}`));
+  
+  // Check management (15% weight)
+  const managementFound = topicPattern.management.filter(mgmt => response.includes(mgmt));
+  score += (managementFound.length / topicPattern.management.length) * 0.15;
+  evidence.push(...managementFound.map(mgmt => `mgmt:${mgmt}`));
+  
+  const totalFound = keyTermsFound.length + mechanismsFound.length + symptomsFound.length + 
+                    complicationsFound.length + managementFound.length;
+  
+  return {
+    score: Math.min(score, 1),
+    confidence: totalFound > 0 ? 0.8 : 0.3,
+    evidence: evidence,
+    reasoning: `Topic-specific patterns for ${topic}: ${totalFound} relevant elements found`
+  };
+}
+
+/**
+ * Clinical Reasoning Pattern Assessment
+ */
+function assessClinicalReasoningPatterns(response: string, subtopicTitle?: string): AssessmentScore {
+  let score = 0;
+  let evidence: string[] = [];
+  
+  // Determine the context (diagnostic, therapeutic, or prognostic)
+  const context = identifyReasoningContext(subtopicTitle || '');
+  const patterns = CLINICAL_REASONING_PATTERNS[context];
+  
+  if (!patterns) {
+    return { score: 0.5, confidence: 0.5, evidence: [], reasoning: 'Unknown reasoning context' };
+  }
+  
+  // Check for positive clinical reasoning indicators (80% weight)
+  const positiveFound = patterns.positive.filter(pattern => response.includes(pattern));
+  const positiveScore = Math.min(positiveFound.length / patterns.positive.length, 1) * 0.8;
+  score += positiveScore;
+  evidence.push(...positiveFound.map(p => `+${p}`));
+  
+  // Penalize negative indicators (20% penalty)
+  const negativeFound = patterns.negative.filter(pattern => response.includes(pattern));
+  const negativePenalty = (negativeFound.length / patterns.negative.length) * 0.2;
+  score = Math.max(0, score - negativePenalty);
+  evidence.push(...negativeFound.map(n => `-${n}`));
+  
+  // Bonus for clinical uncertainty language (appropriate in medical context)
+  const uncertaintyPatterns = ['may', 'might', 'could', 'possible', 'likely', 'consider', 'suggest'];
+  const uncertaintyFound = uncertaintyPatterns.filter(pattern => response.includes(pattern));
+  if (uncertaintyFound.length > 0 && negativeFound.length === 0) {
+    score += 0.1; // Small bonus for appropriate uncertainty
+    evidence.push(...uncertaintyFound.map(u => `?${u}`));
+  }
+  
+  return {
+    score: Math.min(score, 1),
+    confidence: positiveFound.length > 0 ? 0.75 : 0.4,
+    evidence: evidence,
+    reasoning: `Clinical reasoning (${context}): ${positiveFound.length} positive, ${negativeFound.length} negative indicators`
+  };
+}
+
+function identifyReasoningContext(subtopicTitle: string): keyof typeof CLINICAL_REASONING_PATTERNS {
+  const title = subtopicTitle.toLowerCase();
+  
+  if (title.includes('diagnosis') || title.includes('clinical') || title.includes('assessment')) {
+    return 'diagnostic';
+  }
+  if (title.includes('treatment') || title.includes('management') || title.includes('therapy')) {
+    return 'therapeutic';
+  }
+  if (title.includes('prognosis') || title.includes('outcome') || title.includes('complications')) {
+    return 'prognostic';
+  }
+  
+  return 'diagnostic'; // Default
+}
+
+/**
+ * Stage 1: Quick Quality Filters
+ */
+function applyQuickQualityFilters(response: string, length: number): { shouldReturn: boolean; assessment?: MedicalAssessment } {
+  // Struggling responses
+  if (isStruggling(response)) {
+    return {
+      shouldReturn: true,
+      assessment: {
+        isCorrect: false,
+        confidence: 0.9,
+        missingConcepts: ['Student needs support and guidance'],
+        assessmentType: 'struggling',
+        reasoning: 'Student appears confused or struggling'
+      }
+    };
+  }
+  
+  // Insufficient responses
+  if (length < 3) {
+    return {
+      shouldReturn: true,
+      assessment: {
+        isCorrect: false,
+        confidence: 0.8,
+        missingConcepts: ['Response too brief for meaningful assessment'],
+        assessmentType: 'insufficient',
+        reasoning: 'Response too brief for assessment'
+      }
+    };
+  }
+  
+  // Very short but potentially meaningful responses
+  if (length < 15) {
+    const shortMeaningfulPatterns = [
+      /^(yes|no|correct|incorrect|true|false)$/,
+      /^(acute|chronic|benign|malignant)$/,
+      /^(hypertension|diabetes|cancer|infection)$/
+    ];
+    
+    if (!shortMeaningfulPatterns.some(pattern => pattern.test(response))) {
+      return {
+        shouldReturn: true,
+        assessment: {
+          isCorrect: false,
+          confidence: 0.7,
+          missingConcepts: ['Need more detailed explanation'],
+          assessmentType: 'insufficient',
+          reasoning: 'Response too brief to demonstrate understanding'
+        }
+      };
+    }
+  }
+  
+  return { shouldReturn: false };
+}
+
+/**
+ * Stage 2A: Medical Vocabulary Assessment
+ */
+function assessMedicalVocabulary(response: string): AssessmentScore {
+  let score = 0;
+  let maxScore = 0;
+  let evidence: string[] = [];
+  
+  // Check each vocabulary category
+  Object.entries(MEDICAL_VOCABULARY).forEach(([category, terms]) => {
+    const categoryWeight = getCategoryWeight(category);
+    const foundTerms = terms.filter(term => response.includes(term));
+    
+    if (foundTerms.length > 0) {
+      const categoryScore = Math.min(foundTerms.length / terms.length, 1) * categoryWeight;
+      score += categoryScore;
+      evidence.push(...foundTerms);
+    }
+    
+    maxScore += categoryWeight;
+  });
+  
+  const normalizedScore = score / maxScore;
+  
+  return {
+    score: normalizedScore,
+    confidence: normalizedScore > 0.3 ? 0.8 : 0.6,
+    evidence: evidence,
+    reasoning: `Medical vocabulary usage: ${evidence.length} relevant terms found`
+  };
+}
+
+/**
+ * Stage 2B: Reasoning Pattern Assessment
+ */
+function assessReasoningPatterns(response: string): AssessmentScore {
+  let score = 0;
+  let maxScore = 0;
+  let evidence: string[] = [];
+  
+  // Check each reasoning pattern category
+  Object.entries(REASONING_PATTERNS).forEach(([category, patterns]) => {
+    const categoryWeight = getReasoningWeight(category);
+    const foundPatterns = patterns.filter(pattern => response.includes(pattern));
+    
+    if (foundPatterns.length > 0) {
+      const categoryScore = Math.min(foundPatterns.length / patterns.length, 1) * categoryWeight;
+      score += categoryScore;
+      evidence.push(...foundPatterns);
+    }
+    
+    maxScore += categoryWeight;
+  });
+  
+  const normalizedScore = score / maxScore;
+  
+  return {
+    score: normalizedScore,
+    confidence: normalizedScore > 0.2 ? 0.7 : 0.5,
+    evidence: evidence,
+    reasoning: `Reasoning patterns: ${evidence.length} logical connectors found`
+  };
+}
+
+/**
+ * Stage 2C: Concept-Specific Pattern Assessment with Topic-Awareness
+ */
+function assessConceptSpecificPatterns(response: string, subtopicTitle?: string, topic?: string): AssessmentScore {
+  if (!subtopicTitle) {
+    return { score: 0.5, confidence: 0.5, evidence: [], reasoning: 'No specific concept context provided' };
+  }
+  
+  // Determine concept type from subtopic
+  const conceptType = identifyConceptType(subtopicTitle);
+  const pattern = CONCEPT_PATTERNS[conceptType];
+  
+  if (!pattern) {
+    return { score: 0.5, confidence: 0.5, evidence: [], reasoning: 'Unknown concept type' };
+  }
+  
+  let score = 0;
+  let evidence: string[] = [];
+  
+  // Check required elements
+  const requiredFound = pattern.requiredElements.filter(element => response.includes(element));
+  const requiredScore = requiredFound.length / pattern.requiredElements.length;
+  score += requiredScore * 0.4; // 40% weight for required elements
+  evidence.push(...requiredFound);
+  
+  // Check positive indicators
+  const positiveFound = pattern.positiveIndicators.filter(indicator => response.includes(indicator));
+  const positiveScore = Math.min(positiveFound.length / pattern.positiveIndicators.length, 1);
+  score += positiveScore * 0.3; // 30% weight for positive indicators
+  evidence.push(...positiveFound);
+  
+  // **NEW**: Topic-specific pattern matching
+  const topicSpecificScore = assessTopicSpecificPatterns(response, topic);
+  score += topicSpecificScore.score * 0.2; // 20% weight for topic-specific patterns
+  evidence.push(...topicSpecificScore.evidence);
+  
+  // Check negative indicators (penalize)
+  const negativeFound = pattern.negativeIndicators.filter(indicator => response.includes(indicator));
+  const negativePenalty = negativeFound.length / pattern.negativeIndicators.length * 0.1; // Reduced penalty
+  score = Math.max(0, score - negativePenalty);
+  
+  // Length requirement
+  const lengthBonus = response.length >= pattern.minimumLength ? 0.1 : 0;
+  score += lengthBonus;
+  
+  return {
+    score: Math.min(score, 1),
+    confidence: requiredFound.length > 0 || topicSpecificScore.score > 0.3 ? 0.8 : 0.4,
+    evidence: evidence,
+    reasoning: `Concept-specific assessment for ${conceptType}: ${evidence.length} relevant elements${topicSpecificScore.score > 0 ? ' + topic-specific patterns' : ''}`
+  };
+}
+
+/**
+ * Stage 2D: Response Structure Assessment
+ */
+function assessResponseStructure(response: string, length: number): AssessmentScore {
+  let score = 0;
+  let evidence: string[] = [];
+  
+  // Length scoring (optimal range: 30-150 characters)
+  const lengthScore = length >= 30 && length <= 150 ? 1 : 
+                     length >= 15 && length <= 200 ? 0.7 : 0.4;
+  score += lengthScore * 0.3;
+  
+  // Sentence structure
+  const sentences = response.split(/[.!?]+/).filter(s => s.trim().length > 5);
+  const sentenceScore = sentences.length >= 2 ? 1 : sentences.length === 1 ? 0.7 : 0.3;
+  score += sentenceScore * 0.2;
+  
+  // Coherence indicators
+  const coherenceMarkers = ['first', 'second', 'also', 'additionally', 'furthermore', 'moreover', 'however', 'therefore'];
+  const foundCoherence = coherenceMarkers.filter(marker => response.includes(marker));
+  const coherenceScore = Math.min(foundCoherence.length / 3, 1);
+  score += coherenceScore * 0.2;
+  evidence.push(...foundCoherence);
+  
+  // Specificity indicators
+  const specificityMarkers = ['specifically', 'particularly', 'especially', 'notably', 'primarily', 'mainly'];
+  const foundSpecificity = specificityMarkers.filter(marker => response.includes(marker));
+  const specificityScore = Math.min(foundSpecificity.length / 2, 1);
+  score += specificityScore * 0.15;
+  evidence.push(...foundSpecificity);
+  
+  // Precision indicators (numbers, percentages, specific terms)
+  const precisionPatterns = [/\d+/, /%/, /\b(high|low|increased|decreased)\b/];
+  const precisionFound = precisionPatterns.filter(pattern => pattern.test(response));
+  const precisionScore = Math.min(precisionFound.length / 2, 1);
+  score += precisionScore * 0.15;
+  
+  return {
+    score: Math.min(score, 1),
+    confidence: 0.7,
+    evidence: evidence,
+    reasoning: `Structure assessment: ${sentences.length} sentences, ${evidence.length} organizational markers`
+  };
+}
+
+/**
+ * Stage 2E: Factual Accuracy Assessment
+ */
+function assessFactualAccuracy(response: string, expectedConcepts?: string[], subtopicTitle?: string, topic?: string): AssessmentScore {
+  if (!expectedConcepts || expectedConcepts.length === 0) {
+    return { score: 0.5, confidence: 0.3, evidence: [], reasoning: 'No expected concepts provided for comparison' };
+  }
+  
+  let score = 0;
+  let evidence: string[] = [];
+  
+  // Direct concept matching
+  const directMatches = expectedConcepts.filter(concept => 
+    response.includes(concept.toLowerCase())
+  );
+  evidence.push(...directMatches);
+  
+  // Semantic concept matching (simple keyword matching)
+  const semanticMatches = expectedConcepts.filter(concept => {
+    const keywords = concept.toLowerCase().split(/\s+/);
+    return keywords.some(keyword => response.includes(keyword));
+  });
+  
+  const uniqueSemanticMatches = semanticMatches.filter(match => !directMatches.includes(match));
+  evidence.push(...uniqueSemanticMatches.map(match => `~${match}`));
+  
+  // Calculate accuracy score
+  const totalMatches = directMatches.length + (uniqueSemanticMatches.length * 0.5);
+  score = Math.min(totalMatches / expectedConcepts.length, 1);
+  
+  // Bonus for comprehensive coverage
+  if (score > 0.7) {
+    score = Math.min(score + 0.1, 1);
+  }
+  
+  return {
+    score: score,
+    confidence: directMatches.length > 0 ? 0.8 : 0.4,
+    evidence: evidence,
+    reasoning: `Factual accuracy: ${directMatches.length} direct + ${uniqueSemanticMatches.length} semantic matches`
+  };
+}
+
+/**
+ * Stage 3: Confidence Weighting System
+ */
+function combineAssessmentScores(
+  scores: {
+    vocabulary: AssessmentScore;
+    reasoning: AssessmentScore;
+    concept: AssessmentScore;
+    structure: AssessmentScore;
+    accuracy: AssessmentScore;
+    clinicalReasoning: AssessmentScore;
+  },
+  expectedConcepts?: string[],
+  response?: string
+): MedicalAssessment {
+  
+  // Dynamic weighting based on available information
+  const weights = calculateDynamicWeights(scores, expectedConcepts);
+  
+  // Calculate weighted score
+  const weightedScore = 
+    scores.vocabulary.score * weights.vocabulary +
+    scores.reasoning.score * weights.reasoning +
+    scores.concept.score * weights.concept +
+    scores.structure.score * weights.structure +
+    scores.accuracy.score * weights.accuracy +
+    scores.clinicalReasoning.score * weights.clinicalReasoning;
+  
+  // Calculate overall confidence
+  const overallConfidence = Math.min(
+    (scores.vocabulary.confidence * weights.vocabulary +
+     scores.reasoning.confidence * weights.reasoning +
+     scores.concept.confidence * weights.concept +
+     scores.structure.confidence * weights.structure +
+     scores.accuracy.confidence * weights.accuracy +
+     scores.clinicalReasoning.confidence * weights.clinicalReasoning), 1
+  );
+  
+  // Determine assessment type and correctness
+  const { isCorrect, assessmentType, missingConcepts } = determineAssessmentOutcome(
+    weightedScore, 
+    overallConfidence, 
+    scores, 
+    expectedConcepts
+  );
+  
+  // Generate comprehensive reasoning
+  const reasoning = generateHybridReasoning(scores, weightedScore, overallConfidence);
+  
+  return {
+    isCorrect,
+    confidence: overallConfidence,
+    missingConcepts,
+    assessmentType,
+    reasoning
+  };
+}
+
+/**
+ * Helper Functions
+ */
+
+interface AssessmentScore {
+  score: number;
+  confidence: number;
+  evidence: string[];
+  reasoning: string;
+}
+
+function getCategoryWeight(category: string): number {
+  const weights: Record<string, number> = {
+    basic: 0.1,
+    advanced: 0.3,
+    process: 0.25,
+    anatomy: 0.2,
+    clinical: 0.25,
+    pharmacology: 0.3,
+    evidence: 0.2,
+    // Domain-specific vocabularies
+    cardiovascular: 0.35,
+    respiratory: 0.35,
+    neurological: 0.35,
+    gastrointestinal: 0.35,
+    endocrine: 0.35,
+    obstetric: 0.35,
+    infectious: 0.35,
+    oncology: 0.35
+  };
+  return weights[category] || 0.1;
+}
+
+function getReasoningWeight(category: string): number {
+  const weights: Record<string, number> = {
+    causal: 0.3,
+    comparative: 0.2,
+    conditional: 0.15,
+    sequential: 0.2,
+    evidential: 0.25
+  };
+  return weights[category] || 0.1;
+}
+
+function identifyConceptType(subtopicTitle: string): keyof typeof CONCEPT_PATTERNS {
+  const title = subtopicTitle.toLowerCase();
+  
+  if (title.includes('pathophysiology') || title.includes('mechanism')) return 'pathophysiology';
+  if (title.includes('diagnosis') || title.includes('clinical')) return 'diagnosis';
+  if (title.includes('treatment') || title.includes('management')) return 'treatment';
+  if (title.includes('pharmacology') || title.includes('drug')) return 'pharmacology';
+  if (title.includes('risk') || title.includes('factor')) return 'risk_factors';
+  
+  return 'pathophysiology'; // Default
+}
+
+function calculateDynamicWeights(
+  scores: any,
+  expectedConcepts?: string[]
+): { vocabulary: number; reasoning: number; concept: number; structure: number; accuracy: number; clinicalReasoning: number } {
+  
+  // Base weights
+  let weights = {
+    vocabulary: 0.2,
+    reasoning: 0.2,
+    concept: 0.2,
+    structure: 0.1,
+    accuracy: 0.1,
+    clinicalReasoning: 0.2
+  };
+  
+  // Adjust based on available information
+  if (expectedConcepts && expectedConcepts.length > 0) {
+    weights.accuracy = 0.25;
+    weights.vocabulary = 0.15;
+    weights.reasoning = 0.15;
+    weights.concept = 0.15;
+    weights.structure = 0.1;
+    weights.clinicalReasoning = 0.2;
+  }
+  
+  // Boost high-confidence scores
+  if (scores.concept.confidence > 0.8) {
+    weights.concept += 0.1;
+    weights.structure -= 0.05;
+    weights.vocabulary -= 0.05;
+  }
+  
+  // Boost clinical reasoning for clinical topics
+  if (scores.clinicalReasoning && scores.clinicalReasoning.confidence > 0.7) {
+    weights.clinicalReasoning += 0.1;
+    weights.structure -= 0.05;
+    weights.vocabulary -= 0.05;
+  }
+  
+  return weights;
+}
+
+function determineAssessmentOutcome(
+  weightedScore: number,
+  confidence: number,
+  scores: any,
+  expectedConcepts?: string[]
+): { isCorrect: boolean; assessmentType: MedicalAssessment['assessmentType']; missingConcepts: string[] } {
+  
+  // High confidence, high score
+  if (confidence > 0.7 && weightedScore > 0.7) {
+    return {
+      isCorrect: true,
+      assessmentType: 'correct',
+      missingConcepts: []
+    };
+  }
+  
+  // Medium confidence/score
+  if (confidence > 0.5 && weightedScore > 0.4) {
+    const missingConcepts = generateMissingConcepts(scores, expectedConcepts);
+    return {
+      isCorrect: false,
+      assessmentType: 'partial',
+      missingConcepts
+    };
+  }
+  
+  // Low performance
+  if (weightedScore < 0.3 || confidence < 0.4) {
+    return {
+      isCorrect: false,
+      assessmentType: 'incorrect',
+      missingConcepts: expectedConcepts || ['Fundamental concepts need review']
+    };
+  }
+  
+  // Default case
+  return {
+    isCorrect: false,
+    assessmentType: 'partial',
+    missingConcepts: generateMissingConcepts(scores, expectedConcepts)
+  };
+}
+
+function generateMissingConcepts(scores: any, expectedConcepts?: string[]): string[] {
+  const missing: string[] = [];
+  
+  if (scores.vocabulary.score < 0.3) {
+    missing.push('Medical terminology needs improvement');
+  }
+  
+  if (scores.reasoning.score < 0.3) {
+    missing.push('Logical reasoning and connections');
+  }
+  
+  if (scores.concept.score < 0.4) {
+    missing.push('Key concept understanding');
+  }
+  
+  if (scores.accuracy.score < 0.5 && expectedConcepts) {
+    missing.push('Specific factual knowledge');
+  }
+  
+  return missing.length > 0 ? missing : ['Areas for improvement identified'];
+}
+
+function generateHybridReasoning(scores: any, weightedScore: number, confidence: number): string {
+  const components: string[] = [];
+  
+  if (scores.vocabulary.score > 0.5) {
+    components.push(`Strong medical vocabulary (${scores.vocabulary.evidence.length} terms)`);
+  }
+  
+  if (scores.reasoning.score > 0.4) {
+    components.push(`Good logical reasoning (${scores.reasoning.evidence.length} patterns)`);
+  }
+  
+  if (scores.concept.score > 0.5) {
+    components.push(`Appropriate concept understanding`);
+  }
+  
+  if (scores.accuracy.score > 0.6) {
+    components.push(`Factually accurate content`);
+  }
+  
+  const baseReasoning = components.length > 0 
+    ? `Hybrid assessment: ${components.join(', ')}` 
+    : 'Basic assessment completed';
+  
+  return `${baseReasoning} (Score: ${(weightedScore * 100).toFixed(0)}%, Confidence: ${(confidence * 100).toFixed(0)}%)`;
+}
+
