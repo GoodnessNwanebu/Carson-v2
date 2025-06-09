@@ -10,13 +10,43 @@ export async function POST(req: NextRequest) {
   
   try {
     console.log("📥 [API/llm] Parsing request body...")
-    const session = await req.json()
+    const rawSession = await req.json()
+    
+    // **CRITICAL FIX**: Validate and sanitize session data
+    if (!rawSession) {
+      console.error("❌ [API/llm] No session data provided")
+      return NextResponse.json({ error: "No session data provided" }, { status: 400 })
+    }
+
+    // Provide safe defaults for all required fields
+    const session = {
+      sessionId: rawSession.sessionId || 'unknown',
+      topic: rawSession.topic || 'undefined',
+      subtopics: Array.isArray(rawSession.subtopics) ? rawSession.subtopics : [],
+      currentSubtopicIndex: typeof rawSession.currentSubtopicIndex === 'number' ? rawSession.currentSubtopicIndex : 0,
+      history: Array.isArray(rawSession.history) ? rawSession.history : [],
+      currentSubtopicState: rawSession.currentSubtopicState || 'assessing',
+      currentQuestionType: rawSession.currentQuestionType || 'follow_up',
+      questionsAskedInCurrentSubtopic: typeof rawSession.questionsAskedInCurrentSubtopic === 'number' ? rawSession.questionsAskedInCurrentSubtopic : 0,
+      correctAnswersInCurrentSubtopic: typeof rawSession.correctAnswersInCurrentSubtopic === 'number' ? rawSession.correctAnswersInCurrentSubtopic : 0,
+      shouldTransition: Boolean(rawSession.shouldTransition),
+      isComplete: Boolean(rawSession.isComplete),
+      lastAssessment: rawSession.lastAssessment || undefined
+    };
+
     console.log("✅ [API/llm] Session parsed successfully:", {
       sessionId: session.sessionId,
       topic: session.topic?.substring(0, 50) + (session.topic?.length > 50 ? '...' : ''),
       subtopicsCount: session.subtopics?.length || 0,
-      historyLength: session.history?.length || 0
+      historyLength: session.history?.length || 0,
+      currentSubtopicIndex: session.currentSubtopicIndex,
+      hasValidTopic: session.topic !== 'undefined' && session.topic?.trim().length > 0
     })
+    
+    // Check for the "undefined" topic bug specifically
+    if (session.topic === 'undefined' || !session.topic?.trim()) {
+      console.warn("⚠️ [API/llm] Detected undefined topic - frontend session bug")
+    }
     
     console.log("🧠 [API/llm] Generating prompt...")
     const prompt = generatePrompt(session)
@@ -137,6 +167,17 @@ export async function POST(req: NextRequest) {
   } catch (error) {
     console.error("💥 [API/llm] Unhandled error:", error)
     console.error("💥 [API/llm] Error stack:", error instanceof Error ? error.stack : 'No stack trace')
+    
+    // Check if this is the specific prompt generation error
+    if (error instanceof Error && error.message.includes('Cannot read properties of undefined')) {
+      console.error("🔍 [API/llm] This appears to be the session initialization bug")
+      return NextResponse.json({ 
+        error: "Session initialization error", 
+        details: "Invalid session data - please refresh and try again",
+        suggestion: "This usually happens when session data is malformed. Try starting a new conversation."
+      }, { status: 400 })
+    }
+    
     return NextResponse.json({ 
       error: "Internal server error", 
       details: error instanceof Error ? error.message : String(error) 

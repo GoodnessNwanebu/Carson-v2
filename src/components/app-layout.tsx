@@ -80,11 +80,17 @@ export function AppLayout({ children }: AppLayoutProps) {
       // Set the session flag for future navigation
       sessionStorage.setItem(SESSION_KEY, 'active')
       
-      // If we're on the home/conversation page, clear the session for a fresh start
-      if (pathname === '/') {
-        console.log('Conversation page refresh detected, clearing session for fresh start...')
+      // **FIX**: Only clear session if we're on home page AND there's no active conversation
+      // Check if there's a conversation in progress by looking at localStorage
+      const hasActiveConversation = localStorage.getItem('carsonSession')
+      
+      if (pathname === '/' && !hasActiveConversation) {
+        console.log('Fresh browser session on home page with no active conversation, starting clean...')
         clearSession()
         clearKnowledgeMap()
+      } else if (pathname === '/' && hasActiveConversation) {
+        console.log('Browser refresh detected but preserving active conversation session...')
+        // Don't clear - let the session context load from localStorage
       }
       
       // All other pages behave normally (no redirect)

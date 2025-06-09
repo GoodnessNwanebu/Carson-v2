@@ -20,14 +20,46 @@ interface CurrentSubtopic {
 }
 
 export function generatePrompt(context: PromptContext): string {
-  // Safety check for undefined currentSubtopicIndex
-  const subtopicIndex = context.currentSubtopicIndex ?? 0;
-  const currentSubtopic = context.subtopics?.[subtopicIndex];
+  // **CRITICAL FIX**: Add comprehensive validation and defaults
+  if (!context) {
+    throw new Error("No context provided to generatePrompt");
+  }
+
+  // Validate and provide defaults for all critical fields
+  const safeContext = {
+    sessionId: context.sessionId || 'unknown',
+    topic: context.topic || 'undefined',
+    subtopics: context.subtopics || [],
+    currentSubtopicIndex: context.currentSubtopicIndex ?? 0,
+    history: context.history || [],
+    currentSubtopicState: context.currentSubtopicState || 'assessing',
+    currentQuestionType: context.currentQuestionType || 'follow_up',
+    questionsAskedInCurrentSubtopic: context.questionsAskedInCurrentSubtopic ?? 0,
+    correctAnswersInCurrentSubtopic: context.correctAnswersInCurrentSubtopic ?? 0,
+    shouldTransition: context.shouldTransition || false,
+    isComplete: context.isComplete || false,
+    lastAssessment: context.lastAssessment
+  };
+
+  // Safety check for valid subtopic index
+  const subtopicIndex = Math.max(0, Math.min(safeContext.currentSubtopicIndex, safeContext.subtopics.length - 1));
+  const currentSubtopic = safeContext.subtopics[subtopicIndex];
+
+  // Handle case where topic is literally "undefined" (frontend bug)
+  if (safeContext.topic === 'undefined' || !safeContext.topic.trim()) {
+    return `
+You're Carson, a medical educator. There seems to be a technical issue - no specific topic was provided.
+
+Please respond warmly: "It looks like there might be a technical hiccup. What medical topic would you like to explore? I'm here to help you understand anything from basic concepts to complex clinical scenarios."
+
+Be encouraging and ready to start fresh once they provide a real topic.
+`.trim();
+  }
 
   if (!currentSubtopic) {
     // No subtopics yet, so prompt the LLM to generate them with natural response
     return `
-You're Carson, an attending physician who loves teaching. A medical student just asked about: "${context.topic}"
+You're Carson, an attending physician who loves teaching. A medical student just asked about: "${safeContext.topic}"
 
 Respond like you're having coffee with a junior colleague who asked about this topic. Be genuinely enthusiastic but conversational.
 
@@ -41,7 +73,7 @@ Your approach:
 - Sound like a doctor having a conversation, not an AI tutor
 - Avoid templated openings or canned phrases
 
-Generate subtopics that follow natural medical logic for "${context.topic}":
+Generate subtopics that follow natural medical logic for "${safeContext.topic}":
 
 Think like an attending: What does a student actually need to understand about this topic?
 - **Diseases/Conditions**: Start with what it is, then how to recognize it, then what to do about it
@@ -71,9 +103,9 @@ Return your response as a JSON object with this structure:
   }
 
   // **NEW**: Check if we should test retention of previous learning
-  const retentionTest = shouldTestRetention(context);
+  const retentionTest = shouldTestRetention(safeContext);
   if (retentionTest) {
-    const retentionQuestion = generateRetentionQuestion(retentionTest, context);
+    const retentionQuestion = generateRetentionQuestion(retentionTest, safeContext);
     return `
 You are Carson, a supportive medical tutor who ensures lasting mastery.
 
@@ -88,19 +120,19 @@ Be encouraging and explain that connecting previous learning helps solidify unde
   }
 
   // Check if we should transition to next subtopic
-  if (context.shouldTransition) {
-    const nextSubtopic = context.subtopics?.[subtopicIndex + 1];
-    const isLastSubtopic = subtopicIndex === (context.subtopics?.length ?? 1) - 1;
+  if (safeContext.shouldTransition) {
+    const nextSubtopic = safeContext.subtopics[subtopicIndex + 1];
+    const isLastSubtopic = subtopicIndex === (safeContext.subtopics.length - 1);
     
     if (isLastSubtopic) {
       // **ENHANCED**: Final mastery validation before completion
       return `
-You're Carson, checking if the student really understands ${context.topic}.
+You're Carson, checking if the student really understands ${safeContext.topic}.
 
 They've been through all the subtopics. Before wrapping up, see if they can:
-1. Synthesize: "How would you explain ${context.topic} to a medical student in 2-3 minutes?"
-2. Apply: "Walk me through your approach to a complex ${context.topic} case"
-3. Self-reflect: "What aspect of ${context.topic} do you feel most confident about? Least confident?"
+1. Synthesize: "How would you explain ${safeContext.topic} to a medical student in 2-3 minutes?"
+2. Apply: "Walk me through your approach to a complex ${safeContext.topic} case"
+3. Self-reflect: "What aspect of ${safeContext.topic} do you feel most confident about? Least confident?"
 
 Only after they show they can synthesize and apply should you acknowledge they've got it.
 
@@ -111,7 +143,7 @@ Keep it natural - you're a doctor checking if a student really knows their stuff
       const transitionMessage = generateTransition({
         currentSubtopic: currentSubtopic.title,
         nextSubtopic: nextSubtopic?.title,
-        topic: context.topic,
+        topic: safeContext.topic,
         userStruggled: currentSubtopic.needsExplanation,
         isLastSubtopic: false,
         userPerformance: assessUserPerformance(currentSubtopic)
@@ -125,38 +157,38 @@ Use this transition: "${transitionMessage}"
 Before diving into ${nextSubtopic.title}, check their understanding:
 "${generateSelfAssessmentPrompt(currentSubtopic.title)}"
 
-Then ask your first question about ${nextSubtopic.title} related to ${context.topic}.
+Then ask your first question about ${nextSubtopic.title} related to ${safeContext.topic}.
 
-Ask about the ${nextSubtopic.title} OF ${context.topic} specifically, not generic definitions. Use real clinical scenarios when possible.
+Ask about the ${nextSubtopic.title} OF ${safeContext.topic} specifically, not generic definitions. Use real clinical scenarios when possible.
 `.trim();
     }
   }
 
   // Use the global session history for context
-  const history = context.history
+  const history = safeContext.history
     .map((msg) => `${msg.role === "user" ? "Student" : "Carson"}: ${msg.content}`)
     .join("\n");
 
   // Generate context-aware prompt based on current state and assessment
-  const stateContext = generateStateContext(context, currentSubtopic);
-  const instruction = generateInstructionBasedOnAssessment(context, currentSubtopic);
+  const stateContext = generateStateContext(safeContext, currentSubtopic);
+  const instruction = generateInstructionBasedOnAssessment(safeContext, currentSubtopic);
 
   // Get the last student answer for contextual awareness
-  const lastStudentAnswer = context.history
+  const lastStudentAnswer = safeContext.history
     .filter(msg => msg.role === "user")
     .slice(-1)[0]?.content || "";
 
   // Get Carson's last question for context
-  const lastCarsonQuestion = context.history
+  const lastCarsonQuestion = safeContext.history
     .filter(msg => msg.role === "assistant")
     .slice(-1)[0]?.content || "";
 
   // **NEW**: Add metacognitive guidance for struggling students
-  const strugglingGuidance = context.lastAssessment?.isStruggling ? 
-    `\nMETACOGNITIVE SUPPORT: Consider asking: "${generateMetacognitiveQuestion(context, context.lastAssessment.answerQuality as any)}"` : '';
+  const strugglingGuidance = safeContext.lastAssessment?.isStruggling ? 
+    `\nMETACOGNITIVE SUPPORT: Consider asking: "${generateMetacognitiveQuestion(safeContext, safeContext.lastAssessment.answerQuality as any)}"` : '';
 
   // **NEW**: Handle different interaction types appropriately
-  const interactionType = (context.lastAssessment as any)?.interactionType;
+  const interactionType = (safeContext.lastAssessment as any)?.interactionType;
   if (interactionType && interactionType !== 'medical_response') {
     return `
 You are Carson, a warm and supportive medical tutor who understands that learning involves human emotions and needs.
@@ -166,7 +198,7 @@ You are Carson, a warm and supportive medical tutor who understands that learnin
 Student response: "${lastStudentAnswer}"
 
 **RESPONSE STRATEGY**: 
-${context.lastAssessment?.reasoning}
+${safeContext.lastAssessment?.reasoning}
 
 After addressing their ${interactionType === 'emotional_support' ? 'emotional needs' : 
                         interactionType === 'personal_casual' ? 'personal question' :
@@ -176,11 +208,11 @@ After addressing their ${interactionType === 'emotional_support' ? 'emotional ne
                         interactionType === 'give_up' ? 'motivational needs' :
                         interactionType === 'technical_issue' ? 'technical concern' :
                         'off-topic question'}, 
-gently guide them back to our learning objectives for ${context.topic}.
+gently guide them back to our learning objectives for ${safeContext.topic}.
 
 Be authentic, warm, and consultant-like. Show you understand their human needs while maintaining focus on their medical education journey.
 
-Current learning context: ${currentSubtopic.title} of ${context.topic}
+Current learning context: ${currentSubtopic.title} of ${safeContext.topic}
 `.trim();
   }
 
@@ -188,13 +220,13 @@ Current learning context: ${currentSubtopic.title} of ${context.topic}
 You're Carson, responding naturally to this medical student. Don't use templates or AI-speak.
 
 Context:
-- Topic: ${context.topic}
+- Topic: ${safeContext.topic}
 - Current subtopic: ${currentSubtopic.title}
 - Student's last answer: "${lastStudentAnswer}"
 - Carson's last question: "${lastCarsonQuestion}"
-- Assessment: ${context.lastAssessment?.answerQuality || 'N/A'}
-${context.lastAssessment?.specificGaps ? `- Missing pieces: ${context.lastAssessment.specificGaps}` : ''}
-${context.lastAssessment?.isStruggling ? '- Student seems confused/struggling' : ''}
+- Assessment: ${safeContext.lastAssessment?.answerQuality || 'N/A'}
+${safeContext.lastAssessment?.specificGaps ? `- Missing pieces: ${safeContext.lastAssessment.specificGaps}` : ''}
+${safeContext.lastAssessment?.isStruggling ? '- Student seems confused/struggling' : ''}
 
 What to do:
 ${instruction}

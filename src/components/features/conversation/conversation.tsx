@@ -159,7 +159,7 @@ export function Conversation({
           subtopics: [],
           currentSubtopicIndex: 0,
           history: [userMessage],
-          currentQuestionType: 'follow_up',
+          currentQuestionType: 'parent',
           questionsAskedInCurrentSubtopic: 0,
           correctAnswersInCurrentSubtopic: 0,
           currentSubtopicState: 'assessing',
@@ -273,6 +273,32 @@ export function Conversation({
           } : undefined
         };
 
+        // **CRITICAL FIX**: Ensure all required fields are present for callLLM
+        const safeSessionForLLM = {
+          sessionId: updatedSession.sessionId || session.sessionId || 'unknown',
+          topic: updatedSession.topic || session.topic || 'undefined',
+          subtopics: updatedSession.subtopics || session.subtopics || [],
+          currentSubtopicIndex: typeof updatedSession.currentSubtopicIndex === 'number' ? updatedSession.currentSubtopicIndex : (session.currentSubtopicIndex || 0),
+          history: updatedSession.history || [],
+          currentSubtopicState: updatedSession.currentSubtopicState || session.currentSubtopicState || 'assessing',
+          currentQuestionType: (updatedSession.currentQuestionType || session.currentQuestionType || 'parent') as 'parent' | 'child' | 'checkin',
+          questionsAskedInCurrentSubtopic: typeof updatedSession.questionsAskedInCurrentSubtopic === 'number' ? updatedSession.questionsAskedInCurrentSubtopic : (session.questionsAskedInCurrentSubtopic || 0),
+          correctAnswersInCurrentSubtopic: typeof updatedSession.correctAnswersInCurrentSubtopic === 'number' ? updatedSession.correctAnswersInCurrentSubtopic : (session.correctAnswersInCurrentSubtopic || 0),
+          shouldTransition: Boolean(updatedSession.shouldTransition),
+          isComplete: Boolean(updatedSession.isComplete),
+          lastAssessment: updatedSession.lastAssessment
+        };
+
+        // **ADDITIONAL VALIDATION**: Don't call LLM if session data is invalid
+        if (safeSessionForLLM.sessionId === 'unknown' || safeSessionForLLM.topic === 'undefined') {
+          console.error("[Conversation] Invalid session data detected:", {
+            sessionId: safeSessionForLLM.sessionId,
+            topic: safeSessionForLLM.topic,
+            hasSession: !!session
+          });
+          throw new Error("Session not properly initialized. Please refresh and try again.");
+        }
+
         // Only generate subtopics if they haven't been generated yet
         let response;
         if (!session.subtopics || session.subtopics.length === 0) {
@@ -280,7 +306,7 @@ export function Conversation({
           setKnowledgeMapLoading(true);
           
           response = await callLLM({
-            ...updatedSession,
+            ...safeSessionForLLM,
             subtopics: [],
             currentSubtopicIndex: 0,
           });
@@ -298,7 +324,7 @@ export function Conversation({
           setKnowledgeMapLoading(false);
         } else {
           // Socratic Q&A with assessment-driven responses - no knowledge map loading needed
-          response = await callLLM(updatedSession);
+          response = await callLLM(safeSessionForLLM);
         }
 
         const assistantMessage = { id: uuidv4(), role: "assistant" as const, content: response.content };

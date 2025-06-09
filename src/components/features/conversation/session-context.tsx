@@ -30,9 +30,24 @@ export function useSession() {
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<CarsonSessionContext | null>(null)
 
-  // Don't load session from localStorage on mount to prevent flicker
-  // The session is cleared on app refresh anyway via useEffect in CarsonUIContent
-  // If we need persistence in the future, we can add a flag to control this
+  // **FIX**: Load session from localStorage on mount to restore after refresh
+  useEffect(() => {
+    const savedSession = localStorage.getItem('carsonSession')
+    if (savedSession) {
+      try {
+        const parsedSession = JSON.parse(savedSession)
+        console.log('Restoring session from localStorage:', { 
+          sessionId: parsedSession.sessionId, 
+          topic: parsedSession.topic,
+          subtopicsCount: parsedSession.subtopics?.length || 0
+        })
+        setSession(parsedSession)
+      } catch (error) {
+        console.error('Failed to restore session from localStorage:', error)
+        localStorage.removeItem('carsonSession')
+      }
+    }
+  }, [])
   
   // Save session to localStorage on every update
   useEffect(() => {
