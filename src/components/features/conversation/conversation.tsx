@@ -15,6 +15,21 @@ import { assessUserResponseV2Parallel as assessUserResponse, AssessmentResult, R
 import { CompletionCelebration } from "../knowledge-map/knowledge-map-animations";
 import { Button } from "@/components/ui/button"
 
+// Create a context for scroll state sharing
+import { createContext, useContext } from "react"
+
+interface ScrollContextType {
+  isScrolled: boolean;
+  showStickyHeader: boolean;
+}
+
+const ScrollContext = createContext<ScrollContextType>({ 
+  isScrolled: false, 
+  showStickyHeader: false 
+});
+
+export const useScrollContext = () => useContext(ScrollContext);
+
 // Simple markdown processor for Carson's responses
 const processMarkdown = (text: string): React.ReactNode[] => {
   return text.split('\n').map((line, index) => {
@@ -555,22 +570,25 @@ export function Conversation({
   }, []);
 
   return (
-    <div className="flex flex-col h-full bg-white dark:bg-gray-900" style={{ minHeight: 0 }}>
-      {/* Completion celebration */}
-      <CompletionCelebration 
-        isVisible={showCelebration} 
-        onComplete={() => setShowCelebration(false)} 
-      />
+    <ScrollContext.Provider value={{ isScrolled, showStickyHeader }}>
+      <div className="flex flex-col h-full bg-white dark:bg-gray-900" style={{ minHeight: 0 }}>
+        {/* Completion celebration */}
+        <CompletionCelebration 
+          isVisible={showCelebration} 
+          onComplete={() => setShowCelebration(false)} 
+        />
       
-      {/* Persistent sticky header for mobile - Claude/ChatGPT style */}
+      {/* Persistent sticky header - ChatGPT/Claude style */}
       {showStickyHeader && (
         <div
           className={cn(
-            "fixed top-0 left-0 right-0 w-full h-16 bg-white/95 dark:bg-gray-900/95 backdrop-blur-sm border-b border-gray-200/50 dark:border-gray-700/50 transition-all duration-300 z-50 flex items-center justify-between px-4 md:px-6",
+            "fixed top-0 h-16 bg-white/95 dark:bg-gray-900/95 backdrop-blur-sm border-b border-gray-200/50 dark:border-gray-700/50 transition-all duration-300 z-[70] flex items-center justify-between px-4 md:px-6",
+            // Responsive positioning - respect sidebar layout
+            "left-0 right-0", // Mobile: full width
             isScrolled ? "opacity-100 translate-y-0 shadow-sm" : "opacity-0 -translate-y-full"
           )}
         >
-          {/* Left - Hamburger menu */}
+          {/* Left - Hamburger menu (mobile only) */}
           <Button
             variant="ghost"
             size="icon"
@@ -580,7 +598,7 @@ export function Conversation({
             <Menu size={20} />
           </Button>
 
-          {/* Center - Carson branding only */}
+          {/* Center - Carson branding */}
           <div className="flex items-center gap-2 flex-1 justify-center min-w-0">
             <div className="w-6 h-6 bg-blue-600 rounded-md flex items-center justify-center shrink-0">
               <div className="w-2.5 h-2.5 bg-white rounded-full"></div>
@@ -598,7 +616,10 @@ export function Conversation({
       {/* Messages container - with scroll detection */}
       <div
         ref={scrollContainerRef}
-        className="flex-1 overflow-y-scroll pt-16 pb-4 md:pb-6 bg-gray-50 dark:bg-gray-900 px-1 md:px-4"
+        className={cn(
+          "flex-1 overflow-y-scroll pb-4 md:pb-6 bg-gray-50 dark:bg-gray-900 px-1 md:px-4",
+          showStickyHeader && isScrolled ? "pt-[80px]" : "pt-4" // Adjust padding when sticky header is visible
+        )}
         data-conversation-scroll
         style={{ 
           WebkitOverflowScrolling: 'touch',
@@ -694,7 +715,7 @@ export function Conversation({
 
               {/* Attachment options dropdown */}
               {showAttachmentModal && (
-                <div className="absolute bottom-full left-0 mb-2 bg-white dark:bg-gray-800 rounded-xl sm:rounded-2xl shadow-xl border border-gray-200 dark:border-gray-600 p-3 z-50 min-w-[200px] drop-shadow-lg">
+                <div className="absolute bottom-full left-0 mb-2 bg-white dark:bg-gray-800 rounded-xl sm:rounded-2xl shadow-xl border border-gray-200 dark:border-gray-600 p-3 z-30 min-w-[200px] drop-shadow-lg">
                   <button
                     onClick={() => handleAttachmentOption('file')}
                     className="w-full flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-left"
@@ -818,5 +839,6 @@ export function Conversation({
         </form>
       </div>
     </div>
+    </ScrollContext.Provider>
   )
 }

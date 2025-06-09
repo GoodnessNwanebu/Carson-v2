@@ -57,9 +57,9 @@ export default function CarsonUI() {
   }, [])
 
   return (
-    <ErrorBoundary>
-      <CarsonUIContent />
-    </ErrorBoundary>
+          <ErrorBoundary>
+            <CarsonUIContent />
+          </ErrorBoundary>
   )
 }
 
@@ -237,7 +237,7 @@ function CarsonUIContent() {
           setAudioChunks(prev => [...prev, event.data]);
         }
       };
-      
+
       recorder.onstop = () => {
         console.log('[Voice] Recording stopped');
         stream.getTracks().forEach(track => track.stop());
@@ -246,7 +246,7 @@ function CarsonUIContent() {
       recorder.onerror = (event) => {
         console.error('[Voice] MediaRecorder error:', event);
       };
-      
+
       setMediaRecorder(recorder);
       console.log('[Voice] MediaRecorder initialized successfully');
       return true;
@@ -259,7 +259,7 @@ function CarsonUIContent() {
         if (error.name === 'NotAllowedError') {
           console.error('[Voice] Microphone permission denied');
         } else if (error.name === 'NotFoundError') {
-          console.error('[Voice] No microphone found');
+        console.error('[Voice] No microphone found');
         } else if (error.name === 'NotSupportedError') {
           console.error('[Voice] Audio recording not supported');
         }
@@ -304,8 +304,8 @@ function CarsonUIContent() {
     if (!mediaRecorder) {
       const initialized = await initializeRecording();
       if (!initialized) return;
-    }
-    
+      }
+
     if (isRecording) {
       // Stop recording
       console.log('[Voice] Stopping recording...');
@@ -321,36 +321,36 @@ function CarsonUIContent() {
           const audioBlob = new Blob(audioChunks, { 
             type: audioChunks[0]?.type || 'audio/webm' 
           });
-          
+      
           console.log(`[Voice] Created audio blob: ${audioBlob.size} bytes`);
-          
-          try {
+      
+      try {
             const transcript = await transcribeAudio(audioBlob);
             console.log('[Voice] Transcription successful:', transcript);
-            
+        
             if (transcript && transcript.trim()) {
               // Handle based on context
               if (inConversation && conversationVoiceCallback.current) {
                 // In conversation - use callback
                 conversationVoiceCallback.current(transcript);
-              } else {
+          } else {
                 // On home screen - set query
                 setQuery(transcript);
                 // Auto-resize the textarea
-                setTimeout(() => {
-                  if (inputRef.current) {
-                    resizeTextarea(inputRef.current);
-                  }
-                }, 100);
-              }
+          setTimeout(() => {
+            if (inputRef.current) {
+              resizeTextarea(inputRef.current);
             }
+                }, 100);
+          }
+          }
           } catch (error) {
             console.error('[Voice] Failed to process recording:', error);
           }
           
           // Clear chunks for next recording
           setAudioChunks([]);
-        }
+      }
       }, 100);
     } else {
       // Start recording

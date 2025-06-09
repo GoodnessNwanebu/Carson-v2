@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from "react"
 import { useKnowledgeMap, type TopicStatus } from "./knowledge-map-context"
+import { useSession } from "../conversation/session-context"
+import { useScrollContext } from "../conversation/conversation"
 import { cn } from "@/lib/utils"
 import { Map, CheckCircle, AlertCircle, HelpCircle, Clock } from "lucide-react"
 import { SlideInAnimation } from "./knowledge-map-animations"
@@ -30,7 +32,15 @@ function useMobile() {
 
 export function KnowledgeMapPanel() {
   const { topics, isMapOpen, toggleMap, currentTopicName, isLoading, currentSubtopicIndex } = useKnowledgeMap()
+  const { session } = useSession()
+  const scrollContext = useScrollContext()
   const isMobile = useMobile()
+  
+  // Check if we're in conversation mode - use session data for more accurate detection
+  const inConversation = !!(session && session.history && session.history.length > 1)
+  
+  // Determine if header is visible or will be visible (affects positioning)
+  const headerVisible = scrollContext?.showStickyHeader && scrollContext?.isScrolled
 
   // Get status icon
   const getStatusIcon = (status: TopicStatus) => {
@@ -52,8 +62,9 @@ export function KnowledgeMapPanel() {
       <button
         onClick={toggleMap}
         className={cn(
-          "fixed z-50 p-2 bg-white rounded-full shadow-xl hover:bg-gray-100 transition-all duration-200 drop-shadow-lg hover:shadow-2xl",
-          isMobile ? "top-4 right-4" : "top-4 right-4",
+          "fixed z-[80] p-2 bg-white rounded-full shadow-xl hover:bg-gray-100 transition-all duration-200 drop-shadow-lg hover:shadow-2xl",
+          // Always stay in normal position - above header
+          "top-4 right-4"
         )}
         aria-label="Toggle knowledge map"
       >

@@ -29,7 +29,7 @@ export function Sidebar({ onNewChat }: SidebarProps) {
         variant="ghost"
         size="icon"
         className={cn(
-          "fixed top-4 left-4 z-50 h-10 w-10 flex items-center justify-center bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700 shadow-sm border border-gray-200 dark:border-gray-600 transition-opacity duration-200",
+          "fixed top-4 left-4 z-[80] h-10 w-10 flex items-center justify-center bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700 shadow-sm border border-gray-200 dark:border-gray-600 transition-opacity duration-200",
           // Show only on mobile when sidebar is closed
           "md:hidden",
           sidebarOpen ? "opacity-0 pointer-events-none" : "opacity-100"
@@ -42,7 +42,7 @@ export function Sidebar({ onNewChat }: SidebarProps) {
       {/* Mobile backdrop overlay */}
       <div 
         className={cn(
-          "fixed inset-0 bg-black/50 z-40 md:hidden transition-opacity duration-200",
+          "fixed inset-0 bg-black/50 z-[72] md:hidden transition-opacity duration-200",
           sidebarOpen ? "opacity-100" : "opacity-0 pointer-events-none"
         )}
         onClick={() => setSidebarOpen(false)}
@@ -51,7 +51,7 @@ export function Sidebar({ onNewChat }: SidebarProps) {
       {/* Sidebar */}
       <div
         className={cn(
-          "fixed inset-y-0 left-0 z-40 flex flex-col bg-gray-900 text-white sidebar-transition",
+          "fixed inset-y-0 left-0 z-[75] flex flex-col bg-gray-900 text-white sidebar-transition",
           "bg-gray-900 dark:bg-gray-950 border-r border-gray-800 dark:border-gray-700",
           // Mobile: full width, slide in/out
           "w-[280px] md:w-auto",

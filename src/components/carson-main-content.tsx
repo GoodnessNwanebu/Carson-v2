@@ -217,7 +217,7 @@ export function CarsonMainContent({
 
                             {/* Attachment options dropdown */}
                             {showAttachmentModal && (
-                              <div className="absolute top-full left-0 mt-2 bg-white dark:bg-gray-800 rounded-xl sm:rounded-2xl shadow-xl border border-gray-200 dark:border-gray-600 p-3 z-50 min-w-[200px] drop-shadow-lg">
+                              <div className="absolute top-full left-0 mt-2 bg-white dark:bg-gray-800 rounded-xl sm:rounded-2xl shadow-xl border border-gray-200 dark:border-gray-600 p-3 z-30 min-w-[200px] drop-shadow-lg">
                                 <button
                                   onClick={() => handleAttachmentOption('file')}
                                   className="w-full flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-left"

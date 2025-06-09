@@ -10,7 +10,7 @@ import {
   CheckCircle2,
   RotateCcw,
   ArrowLeft, 
-  ArrowRight,
+  ArrowRight, 
   Brain
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -71,7 +71,7 @@ export function QuestionSolver({ className }: QuestionSolverProps) {
 
   const calculateResults = () => {
     if (!selectedBank) return { correct: 0, total: 0, percentage: 0 };
-    
+
     const correct = Object.values(userAnswers).filter(a => a.isCorrect).length;
     const total = selectedBank.questions.length;
     return { correct, total, percentage: Math.round((correct / total) * 100) };
@@ -95,25 +95,25 @@ export function QuestionSolver({ className }: QuestionSolverProps) {
               
               <div className="relative">
                 {/* Carson Header */}
-                <div className="text-center mb-6 sm:mb-8">
+          <div className="text-center mb-6 sm:mb-8">
                   <div className="inline-flex items-center gap-3 sm:gap-4 bg-blue-600 text-white px-6 sm:px-8 py-3 sm:py-4 rounded-full shadow-sm mb-6 sm:mb-8">
                     <Brain className="w-5 h-5 sm:w-6 sm:h-6" />
                     <span className="text-lg sm:text-xl font-bold">Carson Practice</span>
-                  </div>
+              </div>
                   <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white mb-3 sm:mb-4">{selectedBank.name}</h2>
                   <p className="text-gray-600 dark:text-gray-300 leading-relaxed text-base sm:text-lg">{selectedBank.description}</p>
-                </div>
-                
+          </div>
+          
                 {/* Stats Grid */}
-                <div className="grid grid-cols-3 gap-4 sm:gap-6 mb-6 sm:mb-8">
+          <div className="grid grid-cols-3 gap-4 sm:gap-6 mb-6 sm:mb-8">
                   <div className="text-center p-4 sm:p-6 bg-gray-50 dark:bg-gray-700 rounded-xl border border-gray-100 dark:border-gray-600">
                     <div className="text-xl sm:text-2xl font-bold text-blue-600 dark:text-blue-400">{selectedBank.totalQuestions}</div>
                     <div className="text-sm text-gray-500 dark:text-gray-400 font-medium">Questions</div>
-                  </div>
+            </div>
                   <div className="text-center p-4 sm:p-6 bg-gray-50 dark:bg-gray-700 rounded-xl border border-gray-100 dark:border-gray-600">
                     <div className="text-xl sm:text-2xl font-bold text-blue-600 dark:text-blue-400">~{selectedBank.estimatedTimeMinutes}</div>
                     <div className="text-sm text-gray-500 dark:text-gray-400 font-medium">Minutes</div>
-                  </div>
+            </div>
                   <div className="text-center p-4 sm:p-6 bg-gray-50 dark:bg-gray-700 rounded-xl border border-gray-100 dark:border-gray-600">
                     <div className={cn(
                       "text-xl sm:text-2xl font-bold capitalize",
@@ -121,31 +121,31 @@ export function QuestionSolver({ className }: QuestionSolverProps) {
                       selectedBank.difficulty === 'medium' ? 'text-yellow-600 dark:text-yellow-400' :
                       'text-red-600 dark:text-red-400'
                     )}>
-                      {selectedBank.difficulty}
-                    </div>
+                {selectedBank.difficulty}
+              </div>
                     <div className="text-sm text-gray-500 dark:text-gray-400 font-medium">Difficulty</div>
-                  </div>
-                </div>
+            </div>
+          </div>
 
                 {/* Action Buttons */}
-                <div className="space-y-3 sm:space-y-4">
-                  <Button 
+          <div className="space-y-3 sm:space-y-4">
+            <Button 
                     onClick={() => startSession('practice')} 
                     className="w-full h-12 sm:h-14 text-base bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-700 shadow-sm transition-all duration-200"
-                  >
-                    <Brain className="w-5 h-5 mr-3" />
+            >
+              <Brain className="w-5 h-5 mr-3" />
                     Start Practice with Carson
-                  </Button>
-                </div>
+            </Button>
+          </div>
 
-                <Button 
-                  onClick={() => selectBank(null)} 
-                  variant="ghost" 
+          <Button 
+            onClick={() => selectBank(null)} 
+            variant="ghost" 
                   className="w-full mt-6 sm:mt-8 text-gray-600 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all duration-200"
-                >
-                  <ArrowLeft className="w-4 h-4 mr-2" />
-                  Choose Different Bank
-                </Button>
+          >
+            <ArrowLeft className="w-4 h-4 mr-2" />
+            Choose Different Bank
+          </Button>
               </div>
             </div>
           </div>
@@ -185,25 +185,25 @@ export function QuestionSolver({ className }: QuestionSolverProps) {
                     <div>
                       <div className="text-2xl sm:text-3xl font-bold text-green-600 dark:text-green-400">{results.correct}</div>
                       <div className="text-sm font-medium text-gray-600 dark:text-gray-400">Correct</div>
-                    </div>
+              </div>
                     <div>
                       <div className="text-2xl sm:text-3xl font-bold text-blue-600 dark:text-blue-400">{results.total}</div>
                       <div className="text-sm font-medium text-gray-600 dark:text-gray-400">Total</div>
-                    </div>
+            </div>
                     <div>
                       <div className="text-2xl sm:text-3xl font-bold text-blue-600 dark:text-blue-400">{results.percentage}%</div>
                       <div className="text-sm font-medium text-gray-600 dark:text-gray-400">Score</div>
-                    </div>
-                  </div>
-                </div>
-                
+            </div>
+          </div>
+        </div>
+
                 {/* Action Buttons */}
                 <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
                   <Button 
                     onClick={resetSession} 
                     variant="outline" 
                     className="flex-1 h-12 sm:h-14 border-blue-200 dark:border-blue-700 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 hover:border-blue-300 dark:hover:border-blue-600 transition-all duration-200"
-                  >
+          >
                     <RotateCcw className="w-4 h-4 mr-2" />
                     Try Again
                   </Button>
@@ -260,16 +260,16 @@ export function QuestionSolver({ className }: QuestionSolverProps) {
 
       {/* Main Content */}
       <div className="flex-1 flex" style={{ minHeight: 0 }}>
-        <QuestionDisplay
+            <QuestionDisplay
           question={currentQuestion!}
-          selectedAnswer={selectedAnswer}
-          onAnswerSelect={handleAnswerSelect}
-          onSubmit={handleAnswerSubmit}
-          isSubmitted={isAnswerSubmitted}
-          showExplanation={isAnswerSubmitted}
-        />
+              selectedAnswer={selectedAnswer}
+              onAnswerSelect={handleAnswerSelect}
+              onSubmit={handleAnswerSubmit}
+              isSubmitted={isAnswerSubmitted}
+              showExplanation={isAnswerSubmitted}
+            />
       </div>
-      
+
       {/* Footer Navigation */}
       {isAnswerSubmitted && (
         <div className="bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 px-4 sm:px-6 py-4 shadow-sm">
@@ -293,4 +293,4 @@ export function QuestionSolver({ className }: QuestionSolverProps) {
       )}
     </div>
   );
-}
+} 

@@ -67,8 +67,8 @@ export function QuestionBankSelector() {
           isCorrect: opt.id === correctAnswer || opt.text === correctAnswer
         }));
       }
-
-      return {
+      
+      return { 
         id: q.id || `q_${index + 1}`,
         questionText,
         questionType: 'multiple_choice' as const,
@@ -228,7 +228,7 @@ export function QuestionBankSelector() {
               Practice with past exam questions collaboratively with Carson. Upload your own question banks or choose from available collections.
             </p>
           </div>
-
+          
           {/* Upload Section */}
           {!showUpload ? (
             <div className="bg-white dark:bg-gray-800 rounded-xl sm:rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 p-6 sm:p-8 mb-6 sm:mb-8 relative overflow-hidden">
@@ -253,7 +253,7 @@ export function QuestionBankSelector() {
                     <Plus className="w-5 h-5 mr-2" />
                     Upload Questions
                   </Button>
-                </div>
+                    </div>
 
                 <div className="text-center">
                   <button
@@ -357,13 +357,13 @@ export function QuestionBankSelector() {
                 )}
 
                 <div className="flex gap-3 sm:gap-4">
-                  <Button
+                <Button 
                     onClick={() => setShowUpload(false)}
                     variant="ghost"
                     className="flex-1 text-gray-600 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all duration-200 border-0"
                   >
                     Cancel
-                  </Button>
+                </Button>
                 </div>
               </div>
             </div>
@@ -377,7 +377,7 @@ export function QuestionBankSelector() {
               </h2>
               
               <div className="grid gap-4 sm:gap-6 md:grid-cols-2 lg:grid-cols-3">
-                {availableBanks.map((bank) => (
+            {availableBanks.map((bank) => (
                   <div
                     key={bank.id}
                     className="bg-white dark:bg-gray-800 rounded-xl sm:rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 sm:p-8 hover:shadow-md transition-all duration-200 cursor-pointer group"
@@ -436,7 +436,7 @@ export function QuestionBankSelector() {
               <p className="text-gray-600 dark:text-gray-300 max-w-md mx-auto">
                 Upload your first question bank to start practicing collaboratively with Carson's AI guidance.
               </p>
-            </div>
+          </div>
           )}
         </div>
       </div>
