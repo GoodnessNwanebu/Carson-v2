@@ -3,9 +3,7 @@
 import type React from "react"
 import { useState, useEffect, useRef } from "react"
 import { useSwipeable } from "react-swipeable"
-import { Sidebar } from "./features/sidebar/sidebar"
-import { SidebarProvider, useSidebarState } from "./features/sidebar/sidebar-context"
-import { KnowledgeMapPanel } from "./features/knowledge-map/knowledge-map-panel"
+import { useSidebarState } from "./features/sidebar/sidebar-context"
 import { Conversation } from "./features/conversation/conversation"
 import { ErrorBoundary } from "./ui/error-boundary"
 import { PenLine, GraduationCap, Code, Coffee, Sparkles, Plus, SendHorizonal, Telescope, Mic, MicOff, Camera, FileText, Image, HelpCircle } from "lucide-react"
@@ -48,12 +46,6 @@ export default function CarsonUI() {
         -webkit-overflow-scrolling: touch;
         overscroll-behavior: contain;
       }
-      
-      /* Ensure scrollable containers work properly */
-      // .overflow-y-scroll {
-      //   -webkit-overflow-scrolling: touch;
-      //   overscroll-behavior: contain;
-      // }
     `
     document.head.appendChild(style)
 
@@ -65,13 +57,9 @@ export default function CarsonUI() {
   }, [])
 
   return (
-    <ThemeProvider>
-      <SidebarProvider>
-          <ErrorBoundary>
-            <CarsonUIContent />
-          </ErrorBoundary>
-      </SidebarProvider>
-    </ThemeProvider>
+    <ErrorBoundary>
+      <CarsonUIContent />
+    </ErrorBoundary>
   )
 }
 
@@ -198,222 +186,182 @@ function CarsonUIContent() {
     }
     
     try {
-      // Request microphone access with enhanced constraints
-      const constraints = {
+      console.log('[Voice] Requesting microphone access...');
+      
+      // Request audio stream with cross-platform constraints
+      const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: true,
           noiseSuppression: true,
           autoGainControl: true,
-          // Sample rate optimization based on device
-          sampleRate: capabilities.isMobile ? 16000 : 44100,
-          channelCount: 1, // Mono for efficiency
-          ...(capabilities.isIOS && {
-            // iOS-specific constraints
-            sampleSize: 16,
-            latency: 0.1
-          })
+          // Enhanced constraints for better quality
+          sampleRate: { ideal: 16000 }, // Good for speech recognition
+          channelCount: { ideal: 1 },    // Mono for speech
         }
-      };
+      });
       
-      console.log('[Voice] Requesting microphone access with constraints:', constraints);
-      const stream = await navigator.mediaDevices.getUserMedia(constraints);
-      console.log('[Voice] Microphone access granted');
+      console.log('[Voice] Microphone access granted, initializing MediaRecorder...');
       
-      // Try to find best supported audio format
       const audioConfig = getAudioConfig();
-      let selectedMimeType = audioConfig.mimeType;
-      let selectedExtension = audioConfig.fileExtension;
       
-      // Test primary format
-      if (!checkMediaRecorderSupport(audioConfig.mimeType)) {
-        console.warn(`[Voice] Primary format ${audioConfig.mimeType} not supported, trying fallbacks...`);
-        
-        // Try fallback formats
-        let formatFound = false;
+      // Try to create MediaRecorder with best supported format
+      let mimeType = audioConfig.mimeType;
+      let recorder: MediaRecorder;
+      
+      // Always initialize recorder
+      if (checkMediaRecorderSupport(mimeType)) {
+        console.log(`[Voice] Using primary format: ${mimeType}`);
+        recorder = new MediaRecorder(stream, { mimeType });
+      } else {
+        // Try fallbacks
+        recorder = new MediaRecorder(stream); // Default fallback
         for (const fallback of audioConfig.fallbacks) {
           if (checkMediaRecorderSupport(fallback)) {
-            selectedMimeType = fallback;
-            selectedExtension = fallback.includes('webm') ? 'webm' : 
-                               fallback.includes('mp4') ? 'mp4' : 'wav';
-            formatFound = true;
             console.log(`[Voice] Using fallback format: ${fallback}`);
+            mimeType = fallback;
+            recorder = new MediaRecorder(stream, { mimeType: fallback });
             break;
           }
         }
         
-        if (!formatFound) {
-          // Last resort - try without codecs
-          selectedMimeType = capabilities.isMobile ? 'audio/mp4' : 'audio/webm';
-          selectedExtension = capabilities.isMobile ? 'mp4' : 'webm';
-          console.warn(`[Voice] Using basic format as last resort: ${selectedMimeType}`);
+        // If we reach here without finding a fallback, recorder is already initialized with default
+        if (recorder.mimeType === '') {
+          console.log('[Voice] Using default MediaRecorder (no explicit mimeType)');
         }
-      } else {
-        console.log(`[Voice] Using primary format: ${selectedMimeType}`);
       }
       
-      // Create MediaRecorder with selected format
-      const recorderOptions = selectedMimeType.includes('codecs') ? 
-        { mimeType: selectedMimeType } : 
-        { mimeType: selectedMimeType.split(';')[0] }; // Remove codecs if not supported
-        
-      const recorder = new MediaRecorder(stream, recorderOptions);
-      
-      // Store format info for later use (extending MediaRecorder)
-      (recorder as any).selectedMimeType = selectedMimeType;
-      (recorder as any).selectedExtension = selectedExtension;
-      
+      // Set up recording event handlers
       recorder.ondataavailable = (event) => {
         if (event.data.size > 0) {
-          console.log(`[Voice] Audio chunk received: ${event.data.size} bytes`);
+          console.log(`[Voice] Data chunk received: ${event.data.size} bytes`);
           setAudioChunks(prev => [...prev, event.data]);
         }
       };
-
-      recorder.onstop = async () => {
+      
+      recorder.onstop = () => {
         console.log('[Voice] Recording stopped');
-        setIsRecording(false);
+        stream.getTracks().forEach(track => track.stop());
       };
       
       recorder.onerror = (event) => {
         console.error('[Voice] MediaRecorder error:', event);
-        setIsRecording(false);
       };
-
+      
       setMediaRecorder(recorder);
       console.log('[Voice] MediaRecorder initialized successfully');
       return true;
       
     } catch (error) {
-      console.error('[Voice] Error accessing microphone:', error);
+      console.error('[Voice] Failed to initialize recording:', error);
       
-      // Enhanced error handling with user-friendly messages
-      const err = error as any;
-      if (err.name === 'NotAllowedError') {
-        console.error('[Voice] Microphone access denied by user');
-        // Could show user guidance modal here
-      } else if (err.name === 'NotFoundError') {
-        console.error('[Voice] No microphone found');
-      } else if (err.name === 'NotReadableError') {
-        console.error('[Voice] Microphone already in use');
-      } else if (err.name === 'OverconstrainedError') {
-        console.error('[Voice] Microphone constraints cannot be satisfied');
-      } else {
-        console.error('[Voice] Unknown microphone error:', error);
+      // Provide user-friendly error messages
+      if (error instanceof Error) {
+        if (error.name === 'NotAllowedError') {
+          console.error('[Voice] Microphone permission denied');
+        } else if (error.name === 'NotFoundError') {
+          console.error('[Voice] No microphone found');
+        } else if (error.name === 'NotSupportedError') {
+          console.error('[Voice] Audio recording not supported');
+        }
       }
       
       return false;
     }
   };
 
-  // Cleanup function for when component unmounts
-  useEffect(() => {
-    return () => {
-      if (mediaRecorder && mediaRecorder.stream) {
-        mediaRecorder.stream.getTracks().forEach(track => track.stop());
-      }
-    };
-  }, [mediaRecorder]);
-
-  // Handle voice recording toggle with enhanced error handling
-  const toggleVoiceRecording = async () => {
-    const capabilities = getDeviceCapabilities();
-    
-    // Show unsupported message for very old browsers
-    if (!capabilities.supportsMediaRecorder || !capabilities.supportsGetUserMedia) {
-      console.error('[Voice] Voice input not supported on this device/browser');
-      // Could show user notification here
-      return;
-    }
-    
-    // Initialize microphone if not already done
-    if (!mediaRecorder) {
-      console.log('[Voice] Initializing recording...');
-      const success = await initializeRecording();
-      if (!success) {
-        console.error('[Voice] Failed to initialize recording');
-        // Could show error modal here
-        return;
-      }
-    }
-
-    if (!mediaRecorder) return;
-
-    if (isRecording) {
-      // Stop recording and transcribe
-      console.log('[Voice] Stopping recording...');
-      mediaRecorder.stop();
+  // Send audio to transcription API (implement based on your backend)
+  const transcribeAudio = async (audioBlob: Blob) => {
+    try {
       setIsTranscribing(true);
+      console.log(`[Voice] Transcribing audio blob: ${audioBlob.size} bytes, type: ${audioBlob.type}`);
       
-      // Create audio blob with proper format
-      const mimeType = (mediaRecorder as any).selectedMimeType || 'audio/webm';
-      const extension = (mediaRecorder as any).selectedExtension || 'webm';
-      const audioBlob = new Blob(audioChunks, { type: mimeType });
+      const formData = new FormData();
+      formData.append('audio', audioBlob, 'recording.webm');
       
-      console.log(`[Voice] Created audio blob: ${audioBlob.size} bytes, type: ${mimeType}`);
-      setAudioChunks([]); // Clear chunks for next recording
+      // TODO: Replace with your actual transcription endpoint
+      const response = await fetch('/api/transcribe', {
+        method: 'POST',
+        body: formData,
+      });
       
-      try {
-        // Send to transcription API with proper filename
-        const formData = new FormData();
-        formData.append('audio', audioBlob, `recording.${extension}`);
-        
-        console.log('[Voice] Sending audio for transcription...');
-        const response = await fetch('/api/transcribe', {
-          method: 'POST',
-          body: formData,
-        });
-        
-        if (response.ok) {
-          const { transcript } = await response.json();
-          console.log('[Voice] Transcription received:', transcript);
-          
-          // Check if we're in conversation mode vs home screen mode
-          if (inConversation) {
-            // In conversation mode - set transcript for conversation component to pick up
-            conversationVoiceCallback.current?.(transcript);
-          } else {
-            // Home screen mode - update query as before
-          setQuery(prevQuery => prevQuery + (prevQuery ? ' ' : '') + transcript);
-          
-          // Auto-resize textarea after adding voice input
-          if (inputRef.current) {
-          setTimeout(() => {
-            if (inputRef.current) {
-              resizeTextarea(inputRef.current);
-            }
-          }, 10);
-          }
-          }
-        } else {
-          const errorData = await response.json().catch(() => ({}));
-          console.error('[Voice] Transcription failed:', response.statusText, errorData);
-          // Could show user error notification here
-        }
-      } catch (error) {
-        console.error('[Voice] Error during transcription:', error);
-        // Could show user error notification here
-      } finally {
-        setIsTranscribing(false);
+      if (!response.ok) {
+        throw new Error(`Transcription failed: ${response.status}`);
       }
-    } else {
-      // Start recording
-      console.log('[Voice] Starting recording...');
-      setAudioChunks([]);
       
-      try {
-        // Start with appropriate time slice based on device
-        const timeSlice = capabilities.isMobile ? 250 : 100; // Longer chunks on mobile for stability
-        mediaRecorder.start(timeSlice);
-      setIsRecording(true);
-        console.log(`[Voice] Recording started with ${timeSlice}ms time slice`);
-      } catch (error) {
-        console.error('[Voice] Error starting recording:', error);
-        setIsRecording(false);
-      }
+      const result = await response.json();
+      console.log('[Voice] Transcription result:', result);
+      
+      return result.transcript || result.text || '';
+    } catch (error) {
+      console.error('[Voice] Transcription error:', error);
+      throw error;
+    } finally {
+      setIsTranscribing(false);
     }
   };
 
-  // Swipe handlers for sidebar (left edge swipe) - always active for touch devices
+  const toggleVoiceRecording = async () => {
+    if (!mediaRecorder) {
+      const initialized = await initializeRecording();
+      if (!initialized) return;
+    }
+    
+    if (isRecording) {
+      // Stop recording
+      console.log('[Voice] Stopping recording...');
+      mediaRecorder!.stop();
+      setIsRecording(false);
+      
+      // Process the recorded audio
+      setTimeout(async () => {
+        if (audioChunks.length > 0) {
+          console.log(`[Voice] Processing ${audioChunks.length} audio chunks...`);
+          
+          // Create blob from chunks
+          const audioBlob = new Blob(audioChunks, { 
+            type: audioChunks[0]?.type || 'audio/webm' 
+          });
+          
+          console.log(`[Voice] Created audio blob: ${audioBlob.size} bytes`);
+          
+          try {
+            const transcript = await transcribeAudio(audioBlob);
+            console.log('[Voice] Transcription successful:', transcript);
+            
+            if (transcript && transcript.trim()) {
+              // Handle based on context
+              if (inConversation && conversationVoiceCallback.current) {
+                // In conversation - use callback
+                conversationVoiceCallback.current(transcript);
+              } else {
+                // On home screen - set query
+                setQuery(transcript);
+                // Auto-resize the textarea
+                setTimeout(() => {
+                  if (inputRef.current) {
+                    resizeTextarea(inputRef.current);
+                  }
+                }, 100);
+              }
+            }
+          } catch (error) {
+            console.error('[Voice] Failed to process recording:', error);
+          }
+          
+          // Clear chunks for next recording
+          setAudioChunks([]);
+        }
+      }, 100);
+    } else {
+      // Start recording
+      console.log('[Voice] Starting recording...');
+      setAudioChunks([]); // Clear previous chunks
+      mediaRecorder!.start(1000); // Collect data every second
+      setIsRecording(true);
+    }
+  };
+
+  // Swipe handlers for sidebar (left edge swipe) - now always listening for touch devices
   const sidebarSwipeHandlers = useSwipeable({
     onSwipedRight: () => {
       if (!sidebarOpen) {
@@ -535,12 +483,7 @@ function CarsonUIContent() {
   };
 
   return (
-    <div className="fixed inset-0 flex bg-gray-50 dark:bg-gray-900">
-      <Sidebar onNewChat={handleNewChat} />
-
-      {/* Only show knowledge map when in conversation */}
-      {inConversation && <KnowledgeMapPanel />}
-
+    <>
       {/* Left edge swipe zone for sidebar - only on mobile */}
       <div
         {...sidebarSwipeHandlers}
@@ -560,9 +503,6 @@ function CarsonUIContent() {
       <div
         className={cn(
           "flex-1 flex flex-col transition-all duration-700 ease-in-out h-full",
-          // Responsive margins: no margin on mobile, responsive margin on desktop
-          "ml-0 md:ml-[60px]",
-          !collapsed && "md:ml-[260px]",
           isTransitioning && "opacity-20 scale-98 blur-sm",
         )}
         style={{ minHeight: 0 }}
@@ -594,7 +534,7 @@ function CarsonUIContent() {
           conversationVoiceCallback={conversationVoiceCallback}
         />
       </div>
-    </div>
+    </>
   )
 }
 

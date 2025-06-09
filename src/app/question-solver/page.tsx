@@ -3,10 +3,10 @@ import { QuestionBankProvider } from '@/components/features/question-solver/ques
 
 export default function QuestionSolverPage() {
   return (
-    <div className="h-screen">
+    <>
       <QuestionBankProvider>
         <QuestionSolver />
       </QuestionBankProvider>
-    </div>
+    </>
   );
 } 

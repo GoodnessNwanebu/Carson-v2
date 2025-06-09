@@ -20,6 +20,9 @@ export function AppLayout({ children }: AppLayoutProps) {
   const pathname = usePathname()
   const router = useRouter()
 
+  // Determine if current page needs scrollable content
+  const isScrollablePage = pathname.startsWith('/question-solver')
+
   // Add viewport meta tag for better mobile behavior
   useEffect(() => {
     // Add viewport meta tag to prevent scaling and improve mobile rendering
@@ -111,7 +114,10 @@ export function AppLayout({ children }: AppLayoutProps) {
   const shouldShowKnowledgeMap = pathname === "/"
 
   return (
-    <div className="fixed inset-0 flex bg-gray-50 dark:bg-gray-900 overflow-hidden">
+    <div className={cn(
+      "fixed inset-0 flex bg-gray-50 dark:bg-gray-900",
+      !isScrollablePage && "overflow-hidden"
+    )}>
       <Sidebar onNewChat={handleNewChat} />
 
       {/* Only show knowledge map on main page */}
@@ -119,7 +125,8 @@ export function AppLayout({ children }: AppLayoutProps) {
 
       <div
         className={cn(
-          "flex-1 flex flex-col content-transition h-full",
+          "flex-1 flex flex-col content-transition",
+          isScrollablePage ? "min-h-screen" : "h-full",
           // Responsive margins: no margin on mobile, responsive margin on desktop based on sidebar state
           "ml-0 md:ml-[60px]",
           !collapsed && "md:ml-[260px]"

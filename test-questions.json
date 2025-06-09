@@ -1,0 +1,46 @@
+{
+  "name": "Sample Medical Questions",
+  "description": "Test questions for upload functionality",
+  "subject": "Medicine",
+  "questions": [
+    {
+      "questionText": "Which hormone is primarily responsible for regulating blood sugar levels?",
+      "options": [
+        {"id": "a", "text": "Insulin"},
+        {"id": "b", "text": "Cortisol"},
+        {"id": "c", "text": "Thyroxine"},
+        {"id": "d", "text": "Growth hormone"}
+      ],
+      "correctAnswer": "a",
+      "explanation": "Insulin is the primary hormone that regulates blood glucose levels by facilitating cellular glucose uptake.",
+      "topic": "Endocrinology",
+      "difficulty": "easy"
+    },
+    {
+      "questionText": "What is the most common cause of community-acquired pneumonia?",
+      "options": [
+        {"id": "a", "text": "Mycoplasma pneumoniae"},
+        {"id": "b", "text": "Streptococcus pneumoniae"},
+        {"id": "c", "text": "Haemophilus influenzae"},
+        {"id": "d", "text": "Klebsiella pneumoniae"}
+      ],
+      "correctAnswer": "b",
+      "explanation": "Streptococcus pneumoniae (pneumococcus) is the most common bacterial cause of community-acquired pneumonia.",
+      "topic": "Infectious Disease",
+      "difficulty": "medium"
+    },
+    {
+      "questionText": "Which ECG finding is most characteristic of hyperkalemia?",
+      "options": [
+        {"id": "a", "text": "Peaked T waves"},
+        {"id": "b", "text": "U waves"},
+        {"id": "c", "text": "ST depression"},
+        {"id": "d", "text": "Prolonged QT interval"}
+      ],
+      "correctAnswer": "a",
+      "explanation": "Peaked T waves are the earliest and most characteristic ECG finding in hyperkalemia.",
+      "topic": "Cardiology",
+      "difficulty": "medium"
+    }
+  ]
+} 

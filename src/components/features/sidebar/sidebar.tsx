@@ -120,7 +120,7 @@ export function Sidebar({ onNewChat }: SidebarProps) {
 
         {/* Middle section with main navigation */}
         <div className="flex-1 overflow-auto px-4">
-          <div className="space-y-3">
+          <div className="space-y-4 pt-6">
             <NavItem 
               icon={Clock} 
               label="Recents" 
@@ -153,7 +153,7 @@ export function Sidebar({ onNewChat }: SidebarProps) {
               
               {/* Explorations submenu when expanded */}
               {!collapsed && (
-                <div className="ml-6 mt-2 space-y-2">
+                <div className="ml-6 mt-3 space-y-2">
                   <NavSubItem
                     icon={HelpCircle}
                     label="Past Questions"
@@ -169,7 +169,7 @@ export function Sidebar({ onNewChat }: SidebarProps) {
 
         {/* Bottom section with settings and profile */}
         <div className="border-t border-gray-800 dark:border-gray-700 p-4">
-          <div className="space-y-3">
+          <div className="space-y-4 pt-2">
             <NavItem 
               icon={Settings} 
               label="Settings" 
