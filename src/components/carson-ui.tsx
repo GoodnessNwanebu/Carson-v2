@@ -98,32 +98,210 @@ function CarsonUIContent() {
   // Attachment modal state
   const [showAttachmentModal, setShowAttachmentModal] = useState(false);
 
-  // Initialize audio recording for initial input only when user clicks microphone
+  // Enhanced device and browser detection for voice features
+  const getDeviceCapabilities = () => {
+    const userAgent = navigator.userAgent;
+    const isIOS = /iPad|iPhone|iPod/.test(userAgent);
+    const isSafari = /Safari/.test(userAgent) && !/Chrome/.test(userAgent);
+    const isAndroid = /Android/.test(userAgent);
+    const isChrome = /Chrome/.test(userAgent);
+    const isFirefox = /Firefox/.test(userAgent);
+    const isEdge = /Edge/.test(userAgent);
+    
+    return {
+      isIOS,
+      isSafari,
+      isAndroid, 
+      isChrome,
+      isFirefox,
+      isEdge,
+      isMobile: isIOS || isAndroid,
+      supportsMediaRecorder: typeof MediaRecorder !== 'undefined',
+      supportsGetUserMedia: !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)
+    };
+  };
+
+  // Get optimal audio configuration for current device/browser
+  const getAudioConfig = () => {
+    const capabilities = getDeviceCapabilities();
+    
+    // iOS Safari - very limited support
+    if (capabilities.isIOS && capabilities.isSafari) {
+      return {
+        mimeType: 'audio/mp4', // Safest for iOS Safari
+        codecs: '',
+        fileExtension: 'mp4',
+        fallbacks: ['audio/wav', 'audio/webm']
+      };
+    }
+    
+    // Android Chrome - good webm support
+    if (capabilities.isAndroid && capabilities.isChrome) {
+      return {
+        mimeType: 'audio/webm;codecs=opus',
+        codecs: 'opus',
+        fileExtension: 'webm',
+        fallbacks: ['audio/webm', 'audio/mp4', 'audio/wav']
+      };
+    }
+    
+    // Firefox - prefers webm but different codec
+    if (capabilities.isFirefox) {
+      return {
+        mimeType: 'audio/webm;codecs=vorbis',
+        codecs: 'vorbis', 
+        fileExtension: 'webm',
+        fallbacks: ['audio/webm', 'audio/wav']
+      };
+    }
+    
+    // Chrome desktop - best support
+    if (capabilities.isChrome) {
+      return {
+        mimeType: 'audio/webm;codecs=opus',
+        codecs: 'opus',
+        fileExtension: 'webm',
+        fallbacks: ['audio/webm', 'audio/wav']
+      };
+    }
+    
+    // Edge and others - safe fallback
+    return {
+      mimeType: 'audio/wav',
+      codecs: '',
+      fileExtension: 'wav',
+      fallbacks: ['audio/wav', 'audio/webm']
+    };
+  };
+
+  // Enhanced MediaRecorder support detection
+  const checkMediaRecorderSupport = (mimeType: string) => {
+    if (!MediaRecorder.isTypeSupported) return false;
+    return MediaRecorder.isTypeSupported(mimeType);
+  };
+
+  // Initialize audio recording with cross-platform fallbacks
   const initializeRecording = async () => {
-    if (mediaRecorder) return; // Already initialized
+    if (mediaRecorder) return true; // Already initialized
+    
+    const capabilities = getDeviceCapabilities();
+    
+    // Check basic support first
+    if (!capabilities.supportsGetUserMedia) {
+      console.error('[Voice] getUserMedia not supported');
+      return false;
+    }
+    
+    if (!capabilities.supportsMediaRecorder) {
+      console.error('[Voice] MediaRecorder not supported');
+      return false;
+    }
     
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const recorder = new MediaRecorder(stream, {
-        mimeType: 'audio/webm;codecs=opus' // Good compression, supported by OpenAI
-      });
+      // Request microphone access with enhanced constraints
+      const constraints = {
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+          // Sample rate optimization based on device
+          sampleRate: capabilities.isMobile ? 16000 : 44100,
+          channelCount: 1, // Mono for efficiency
+          ...(capabilities.isIOS && {
+            // iOS-specific constraints
+            sampleSize: 16,
+            latency: 0.1
+          })
+        }
+      };
+      
+      console.log('[Voice] Requesting microphone access with constraints:', constraints);
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      console.log('[Voice] Microphone access granted');
+      
+      // Try to find best supported audio format
+      const audioConfig = getAudioConfig();
+      let selectedMimeType = audioConfig.mimeType;
+      let selectedExtension = audioConfig.fileExtension;
+      
+      // Test primary format
+      if (!checkMediaRecorderSupport(audioConfig.mimeType)) {
+        console.warn(`[Voice] Primary format ${audioConfig.mimeType} not supported, trying fallbacks...`);
+        
+        // Try fallback formats
+        let formatFound = false;
+        for (const fallback of audioConfig.fallbacks) {
+          if (checkMediaRecorderSupport(fallback)) {
+            selectedMimeType = fallback;
+            selectedExtension = fallback.includes('webm') ? 'webm' : 
+                               fallback.includes('mp4') ? 'mp4' : 'wav';
+            formatFound = true;
+            console.log(`[Voice] Using fallback format: ${fallback}`);
+            break;
+          }
+        }
+        
+        if (!formatFound) {
+          // Last resort - try without codecs
+          selectedMimeType = capabilities.isMobile ? 'audio/mp4' : 'audio/webm';
+          selectedExtension = capabilities.isMobile ? 'mp4' : 'webm';
+          console.warn(`[Voice] Using basic format as last resort: ${selectedMimeType}`);
+        }
+      } else {
+        console.log(`[Voice] Using primary format: ${selectedMimeType}`);
+      }
+      
+      // Create MediaRecorder with selected format
+      const recorderOptions = selectedMimeType.includes('codecs') ? 
+        { mimeType: selectedMimeType } : 
+        { mimeType: selectedMimeType.split(';')[0] }; // Remove codecs if not supported
+        
+      const recorder = new MediaRecorder(stream, recorderOptions);
+      
+      // Store format info for later use (extending MediaRecorder)
+      (recorder as any).selectedMimeType = selectedMimeType;
+      (recorder as any).selectedExtension = selectedExtension;
       
       recorder.ondataavailable = (event) => {
         if (event.data.size > 0) {
+          console.log(`[Voice] Audio chunk received: ${event.data.size} bytes`);
           setAudioChunks(prev => [...prev, event.data]);
         }
       };
 
       recorder.onstop = async () => {
+        console.log('[Voice] Recording stopped');
         setIsRecording(false);
-        // Will handle transcription in the toggle function
+      };
+      
+      recorder.onerror = (event) => {
+        console.error('[Voice] MediaRecorder error:', event);
+        setIsRecording(false);
       };
 
       setMediaRecorder(recorder);
-      return true; // Success
+      console.log('[Voice] MediaRecorder initialized successfully');
+      return true;
+      
     } catch (error) {
-      console.error('Error accessing microphone:', error);
-      return false; // Failed
+      console.error('[Voice] Error accessing microphone:', error);
+      
+      // Enhanced error handling with user-friendly messages
+      const err = error as any;
+      if (err.name === 'NotAllowedError') {
+        console.error('[Voice] Microphone access denied by user');
+        // Could show user guidance modal here
+      } else if (err.name === 'NotFoundError') {
+        console.error('[Voice] No microphone found');
+      } else if (err.name === 'NotReadableError') {
+        console.error('[Voice] Microphone already in use');
+      } else if (err.name === 'OverconstrainedError') {
+        console.error('[Voice] Microphone constraints cannot be satisfied');
+      } else {
+        console.error('[Voice] Unknown microphone error:', error);
+      }
+      
+      return false;
     }
   };
 
@@ -136,13 +314,24 @@ function CarsonUIContent() {
     };
   }, [mediaRecorder]);
 
-  // Handle voice recording toggle for initial input
+  // Handle voice recording toggle with enhanced error handling
   const toggleVoiceRecording = async () => {
+    const capabilities = getDeviceCapabilities();
+    
+    // Show unsupported message for very old browsers
+    if (!capabilities.supportsMediaRecorder || !capabilities.supportsGetUserMedia) {
+      console.error('[Voice] Voice input not supported on this device/browser');
+      // Could show user notification here
+      return;
+    }
+    
     // Initialize microphone if not already done
     if (!mediaRecorder) {
+      console.log('[Voice] Initializing recording...');
       const success = await initializeRecording();
       if (!success) {
-        // Could show error state here
+        console.error('[Voice] Failed to initialize recording');
+        // Could show error modal here
         return;
       }
     }
@@ -151,18 +340,24 @@ function CarsonUIContent() {
 
     if (isRecording) {
       // Stop recording and transcribe
+      console.log('[Voice] Stopping recording...');
       mediaRecorder.stop();
       setIsTranscribing(true);
       
-      // Create audio blob from chunks
-      const audioBlob = new Blob(audioChunks, { type: 'audio/webm;codecs=opus' });
+      // Create audio blob with proper format
+      const mimeType = (mediaRecorder as any).selectedMimeType || 'audio/webm';
+      const extension = (mediaRecorder as any).selectedExtension || 'webm';
+      const audioBlob = new Blob(audioChunks, { type: mimeType });
+      
+      console.log(`[Voice] Created audio blob: ${audioBlob.size} bytes, type: ${mimeType}`);
       setAudioChunks([]); // Clear chunks for next recording
       
       try {
-        // Send to our transcription API
+        // Send to transcription API with proper filename
         const formData = new FormData();
-        formData.append('audio', audioBlob, 'recording.webm');
+        formData.append('audio', audioBlob, `recording.${extension}`);
         
+        console.log('[Voice] Sending audio for transcription...');
         const response = await fetch('/api/transcribe', {
           method: 'POST',
           body: formData,
@@ -170,6 +365,7 @@ function CarsonUIContent() {
         
         if (response.ok) {
           const { transcript } = await response.json();
+          console.log('[Voice] Transcription received:', transcript);
           
           // Check if we're in conversation mode vs home screen mode
           if (inConversation) {
@@ -189,18 +385,31 @@ function CarsonUIContent() {
           }
           }
         } else {
-          console.error('Transcription failed:', response.statusText);
+          const errorData = await response.json().catch(() => ({}));
+          console.error('[Voice] Transcription failed:', response.statusText, errorData);
+          // Could show user error notification here
         }
       } catch (error) {
-        console.error('Error during transcription:', error);
+        console.error('[Voice] Error during transcription:', error);
+        // Could show user error notification here
       } finally {
         setIsTranscribing(false);
       }
     } else {
       // Start recording
+      console.log('[Voice] Starting recording...');
       setAudioChunks([]);
-      mediaRecorder.start(100); // Collect data every 100ms
+      
+      try {
+        // Start with appropriate time slice based on device
+        const timeSlice = capabilities.isMobile ? 250 : 100; // Longer chunks on mobile for stability
+        mediaRecorder.start(timeSlice);
       setIsRecording(true);
+        console.log(`[Voice] Recording started with ${timeSlice}ms time slice`);
+      } catch (error) {
+        console.error('[Voice] Error starting recording:', error);
+        setIsRecording(false);
+      }
     }
   };
 

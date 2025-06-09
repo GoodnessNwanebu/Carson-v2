@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
       currentSubtopicIndex: typeof rawSession.currentSubtopicIndex === 'number' ? rawSession.currentSubtopicIndex : 0,
       history: Array.isArray(rawSession.history) ? rawSession.history : [],
       currentSubtopicState: rawSession.currentSubtopicState || 'assessing',
-      currentQuestionType: rawSession.currentQuestionType || 'follow_up',
+      currentQuestionType: rawSession.currentQuestionType || 'parent',
       questionsAskedInCurrentSubtopic: typeof rawSession.questionsAskedInCurrentSubtopic === 'number' ? rawSession.questionsAskedInCurrentSubtopic : 0,
       correctAnswersInCurrentSubtopic: typeof rawSession.correctAnswersInCurrentSubtopic === 'number' ? rawSession.correctAnswersInCurrentSubtopic : 0,
       shouldTransition: Boolean(rawSession.shouldTransition),

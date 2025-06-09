@@ -330,40 +330,39 @@ export function Conversation({
         const assistantMessage = { id: uuidv4(), role: "assistant" as const, content: response.content };
         setLastCarsonQuestion(response.content); // Store Carson's new question/response
         
-        // Update the session with the complete conversation including the new assistant message
-        updateSession({
+        // **ATOMIC SESSION UPDATE**: Combine all updates into single call to prevent racing
+        const finalSessionUpdates = {
           ...sessionUpdates,
           history: [...session.history, userMessage, assistantMessage]
-        });
+        };
         
-        // NOW trigger celebration after successful API call and session update
-        if (assessmentResult && assessmentResult.answerQuality === 'excellent') {
-          // Small delay to ensure all state updates have settled
-          setTimeout(() => setShowCelebration(true), 100);
-        }
-        
-        // Check if current subtopic should be completed and trigger transition
+        // Check if current subtopic should be completed and add transition flag
         if (session && session.subtopics.length > 0) {
           const currentSubtopicIndex = session.currentSubtopicIndex;
           const shouldComplete = checkSubtopicCompletion(currentSubtopicIndex);
           
           if (shouldComplete) {
-            // Mark for transition on next message
-            updateSession({ shouldTransition: true });
-            
+            finalSessionUpdates.shouldTransition = true;
             // Update knowledge map status
             updateTopicStatus(session.subtopics[currentSubtopicIndex].id, "green");
           }
         }
         
-        // Handle subtopic transition if marked for transition
-        if (session && session.shouldTransition) {
+        // **SINGLE ATOMIC UPDATE** to prevent race conditions
+        updateSession(finalSessionUpdates);
+        
+        // Trigger celebration after successful API call
+        if (assessmentResult && assessmentResult.answerQuality === 'excellent') {
+          setTimeout(() => setShowCelebration(true), 100);
+        }
+        
+        // Handle subtopic transition if marked (use the value we just set)
+        if (finalSessionUpdates.shouldTransition) {
           const moved = moveToNextSubtopic();
           if (moved) {
-            // Update knowledge map to show new current subtopic
+            // Update knowledge map to show new current subtopic  
             setCurrentSubtopicIndex(session.currentSubtopicIndex + 1);
           } else if (isSessionComplete()) {
-            // Session is complete - all subtopics finished
             console.log("[Conversation] Session completed! All subtopics mastered.");
           }
         }

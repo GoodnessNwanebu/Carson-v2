@@ -32,6 +32,15 @@ interface GapAnalysis {
   maxTotalAttempts?: number;
 }
 
+interface ResponseContext {
+  type: 'clarification_question' | 'struggle_indicator' | 'wrong_answer' | 'confidence_expression' | 'regular_response' | 'follow_up_question' | 'post_explanation_confirmation';
+  confidence: number; // 0-100
+  reasoning: string;
+  requiresDirectAnswer: boolean;
+  shouldTriggerGapAnalysis: boolean;
+  suggestedAction: 'answer_directly' | 'offer_help' | 'assess_gaps' | 'continue_conversation' | 'transition' | 'check_broader_understanding' | 'conclude_gracefully';
+}
+
 export function generatePrompt(context: PromptContext): string {
   // **CRITICAL FIX**: Add comprehensive validation and defaults
   if (!context) {
@@ -46,7 +55,7 @@ export function generatePrompt(context: PromptContext): string {
     currentSubtopicIndex: context.currentSubtopicIndex ?? 0,
     history: context.history || [],
     currentSubtopicState: context.currentSubtopicState || 'assessing',
-    currentQuestionType: context.currentQuestionType || 'follow_up',
+    currentQuestionType: context.currentQuestionType || 'parent',
     questionsAskedInCurrentSubtopic: context.questionsAskedInCurrentSubtopic ?? 0,
     correctAnswersInCurrentSubtopic: context.correctAnswersInCurrentSubtopic ?? 0,
     shouldTransition: context.shouldTransition || false,
@@ -115,6 +124,194 @@ Return your response as a JSON object with this structure:
 `.trim();
   }
 
+  // **NEW CRITICAL FEATURE**: Response Context Analysis
+  const responseContext = analyzeResponseContext(safeContext);
+  
+  console.log(`🔍 [ResponseContext] Type: ${responseContext.type}, Action: ${responseContext.suggestedAction}, Reasoning: ${responseContext.reasoning}`);
+
+  // **HANDLE DIFFERENT RESPONSE TYPES**
+  switch (responseContext.suggestedAction) {
+    case 'answer_directly':
+      return `
+You're Carson, answering a direct question from a medical student.
+
+**STUDENT'S QUESTION TYPE**: ${responseContext.type}
+**THEIR QUESTION**: "${safeContext.history[safeContext.history.length - 1]?.content}"
+
+Your approach:
+1. **Answer their question directly and clearly**
+2. **Don't** launch into a full lecture - they asked for specific information
+3. **Don't** ask if they have trouble with "fundamental understanding"
+4. Give a concise, accurate answer
+5. **End with a simple follow-up**: "What else would you like to know about this?" or similar
+
+Be helpful and direct - they're asking for clarification, not remediation.
+
+**TOPIC CONTEXT**: Currently discussing ${currentSubtopic?.title} within ${safeContext.topic}
+`.trim();
+
+    case 'offer_help':
+      // **ENHANCED**: Handle immediate context first, then check for broader gaps later
+      const lastCarsonQuestion = safeContext.history
+        .filter(msg => msg.role === 'assistant')
+        .slice(-1)[0]?.content || '';
+      
+      return `
+You're Carson, responding to a student who just said they don't know something.
+
+**IMMEDIATE CONTEXT**: The student couldn't answer your last question/prompt
+**LAST CARSON MESSAGE**: "${lastCarsonQuestion}"
+**STUDENT RESPONSE**: ${responseContext.reasoning}
+
+Your approach:
+1. **Answer the specific question they couldn't handle** - Don't make them guess anymore
+2. Give a clear, direct explanation of what you just asked about
+3. **End with a check**: "Does that make sense?" or "Was that clearer?"
+4. **IMPORTANT**: Don't jump to gap remediation yet - handle the immediate need first
+
+Be helpful and direct - they need the answer to what you just asked, not a broader assessment.
+
+**CURRENT TOPIC**: ${currentSubtopic?.title} in ${safeContext.topic}
+`.trim();
+
+    case 'transition':
+      // Student expressed confidence/understanding - transition smoothly
+      const nextSubtopic = safeContext.subtopics[subtopicIndex + 1];
+      const isLastSubtopic = subtopicIndex === (safeContext.subtopics.length - 1);
+      
+      if (isLastSubtopic) {
+        return `
+You're Carson, wrapping up the topic since the student seems to understand.
+
+**STUDENT INDICATED**: ${responseContext.reasoning}
+
+Your approach:
+1. "Great! It sounds like you've got a solid understanding of ${safeContext.topic}."
+2. Ask a synthesis question: "Before we finish, can you walk me through your approach to [relevant clinical scenario]?"
+3. If they handle that well, acknowledge their mastery and offer to explore related topics
+
+They've shown understanding - validate that and check for real comprehension.
+`.trim();
+      } else {
+        return `
+You're Carson, transitioning to the next topic since the student understands the current one.
+
+**STUDENT INDICATED**: ${responseContext.reasoning}
+
+Your approach:
+1. "Perfect! I can see you understand ${currentSubtopic.title}."
+2. "Let's move on to ${nextSubtopic?.title}"
+3. Start with an engaging question about the new topic
+4. Keep it conversational and natural
+
+Smooth transition - they've demonstrated understanding.
+`.trim();
+      }
+
+    case 'check_broader_understanding':
+      // **NEW**: Handle post-explanation confirmation → check if gap remediation needed
+      const gapAnalysisForCheck = analyzeKnowledgeGaps(safeContext, currentSubtopic);
+      
+      if (gapAnalysisForCheck.hasSignificantGaps) {
+        return `
+You're Carson, checking if the student has broader understanding gaps after you just explained something.
+
+**CONTEXT**: Student just confirmed they understood your explanation, but you sense there might be broader gaps in ${currentSubtopic?.title}
+
+**TOPIC**: ${safeContext.topic}
+**CURRENT SUBTOPIC**: ${currentSubtopic?.title}
+**SPECIFIC GAP**: ${gapAnalysisForCheck.primaryGap}
+
+Your approach:
+1. "Great! I'm glad that made sense."
+2. **Gentle broader check**: "Before we move on, let me ask you this..." 
+3. Ask ONE targeted question specifically about ${gapAnalysisForCheck.primaryGap} within the context of ${currentSubtopic?.title}
+4. This helps confirm if they understand the bigger picture of ${safeContext.topic}
+
+Be encouraging - you're just making sure they really have it down.
+
+**IMPORTANT**: Keep your question focused on ${currentSubtopic?.title} of ${safeContext.topic}, not unrelated medical topics.
+`.trim();
+      } else {
+        return `
+You're Carson, continuing the conversation after the student confirmed understanding.
+
+**CONTEXT**: Student understood your explanation about ${currentSubtopic?.title} and there are no major gaps detected.
+
+**TOPIC**: ${safeContext.topic}
+**CURRENT SUBTOPIC**: ${currentSubtopic?.title}
+
+Your approach:
+1. "Perfect! I can see you've got that concept down."
+2. Continue with the natural flow of ${currentSubtopic?.title} within ${safeContext.topic}
+3. Ask the next logical question specifically about ${currentSubtopic?.title} (not generic medical topics!)
+4. Stay focused on the current subtopic and topic context
+
+Keep it conversational - they're doing well with ${safeContext.topic}.
+
+**IMPORTANT**: Ask about ${currentSubtopic?.title} OF ${safeContext.topic} specifically, not unrelated topics.
+`.trim();
+      }
+
+    case 'conclude_gracefully':
+      return `
+You're Carson, concluding the conversation because the student has demonstrated solid understanding of ${safeContext.topic}.
+
+**CONTEXT**: Student just gave a good synthesis response showing they understand ${safeContext.topic} comprehensively.
+
+Your approach:
+1. **Celebrate their mastery**: "Excellent! You clearly have a solid grasp of ${safeContext.topic}."
+2. **Acknowledge their growth**: "I can see you've really absorbed these concepts well."
+3. **Offer future exploration**: "When you're ready to dive deeper into related topics like [suggest related area], I'll be here."
+4. **Warm closure**: "Great work today!"
+
+Keep it warm and conclusive - they've earned this recognition.
+
+**IMPORTANT**: This is the END of the conversation. Don't ask more questions.
+`.trim();
+
+    case 'assess_gaps':
+      // Enhanced gap analysis with kind tone
+      const gapAnalysis = analyzeKnowledgeGaps(safeContext, currentSubtopic);
+      
+      if (gapAnalysis.hasSignificantGaps) {
+        return `
+You're Carson, helping a student who's struggling with some concepts.
+
+**STUDENT SITUATION**: They're having trouble with parts of ${currentSubtopic?.title}
+
+Your approach:
+1. **Acknowledge what they got right first** - find something positive in their response
+2. **Gently clarify the specific missing piece**: "${gapAnalysis.primaryGap}"
+3. Give a clear, simple explanation (no lectures!)
+4. **End with encouragement**: "Does this help clarify that part?" or "Make sense now?"
+
+Be supportive - they're learning, not failing.
+
+**CURRENT CONTEXT**: Student discussing ${currentSubtopic?.title} in ${safeContext.topic}
+`.trim();
+      } else {
+        // Minimal gaps - just continue conversation
+        return `
+You're Carson, continuing the natural conversation flow.
+
+**STUDENT RESPONSE TYPE**: ${responseContext.reasoning}
+
+Your approach:
+1. Acknowledge their response positively
+2. Build on what they said
+3. Ask a natural follow-up question about ${currentSubtopic?.title}
+
+Keep it conversational - they're doing fine.
+`.trim();
+      }
+      break;
+
+    default:
+      // Continue with regular conversation flow
+      break;
+  }
+
   // **NEW**: Check if we should test retention of previous learning
   const retentionTest = shouldTestRetention(safeContext);
   if (retentionTest) {
@@ -171,26 +368,14 @@ Your approach:
 No more explanations. Be supportive but decisive about moving forward.
 `.trim();
       } else if (gapAnalysis.hasSignificantGaps) {
-        // Present gaps and offer remediation
-        const attemptNumber = (gapAnalysis.remediationAttempts || 0) + 1;
-        const tryDifferentApproach = attemptNumber > 1 ? "\n**NOTE**: This is attempt #" + attemptNumber + " - try a different explanation approach (analogy, example, simpler terms)." : "";
-        
+        // **DELETED OLD REMEDIATION SYSTEM**
+        // Let the enhanced response context analysis handle this instead
         return `
-You're Carson, a knowledge guide who identifies and helps fill learning gaps.
+You're Carson, responding naturally to this student.
 
-GAPS IDENTIFIED in ${currentSubtopic.title}:
-${gapAnalysis.gaps.map(gap => `• ${gap}`).join('\n')}
+Continue the conversation naturally. If they're struggling with something specific, just explain it clearly and move on.
 
-Your approach:
-1. "I noticed you're still unclear about ${gapAnalysis.primaryGap}. This is important for understanding ${safeContext.topic}."
-2. Provide a clear, focused explanation of the gap
-3. **CRITICAL**: End with a simple confirmation question: "Do you understand this now?" or "Does that make sense?"
-4. If they say yes/confirm understanding → transition to next subtopic immediately
-5. If they're still confused → try a different explanation approach
-
-**REMEDIATION LIMIT**: Maximum 2 explanation attempts per gap. After that, acknowledge the gap and move on.${tryDifferentApproach}
-
-Keep it supportive - you're helping them identify what they need to master.
+Don't diagnose gaps or give clinical assessments. Just be helpful and conversational.
 `.trim();
       } else {
         // Smooth transition - minimal gaps, good understanding
@@ -338,35 +523,73 @@ function generateInstructionBasedOnAssessment(context: PromptContext, currentSub
     // If gaps are now resolved, trigger automatic transition
     if (!gapAnalysis.hasSignificantGaps && gapAnalysis.confidenceScore >= 75) {
       return `
-Excellent! They've filled the gaps in ${currentSubtopic.title}. 
+Wonderful! They've really absorbed the concepts around ${currentSubtopic.title}. 
 
 Assessment shows:
-- Understanding improved (confidence: ${gapAnalysis.confidenceScore}%)
-- No significant gaps remaining
-- Ready for progression
+- Their understanding has improved nicely (confidence: ${gapAnalysis.confidenceScore}%)
+- The gaps we identified have been filled
+- They're ready to move forward
 
-AUTOMATIC TRANSITION: Move to next subtopic with smooth transition.
-Use: "Great - you've got ${currentSubtopic.title} down now. Let's move on to [next topic]."
-Then immediately ask about the next subtopic.
+AUTOMATIC TRANSITION: Time to explore the next subtopic together.
+Use a warm transition like: "Great - you've got ${currentSubtopic.title} down now. Let's explore [next topic] together."
 
-No additional checking needed - they've demonstrated understanding.`;
+Keep the energy positive and build on their success.`;
     }
     
     // Still have gaps after explanation - need verification questions
     if (gapAnalysis.hasSignificantGaps) {
+      const naturallyDiscussed = analyzeNaturalCoverage(context.history, gapAnalysis.gaps);
+      
       return `
-They still have gaps after your explanation of ${currentSubtopic.title}.
+They're still working through some parts of ${currentSubtopic.title} after your explanation.
 
-Remaining gaps: ${gapAnalysis.gaps.join(', ')}
+${generateKindRemediationGuidance(gapAnalysis.gaps, gapAnalysis.primaryGap, naturallyDiscussed)}
+
+Remember: Ask with curiosity, not assessment. "I'm curious about..." or "What are your thoughts on..." 
+If they're still uncertain, try a different angle - maybe a real example or analogy.`;
+    }
+  }
+  
+  // **ENHANCED**: Use response context analysis for better guidance
+  const responseContext = analyzeResponseContext(context);
+  
+  // Handle clarification questions with kindness
+  if (responseContext.type === 'clarification_question') {
+    return `
+The student just asked for clarification - this is great! They're engaged and want to understand better.
 
 Your approach:
-1. Ask a targeted question to check if they understood your explanation
-2. Focus on the main gap: "${gapAnalysis.primaryGap}"
-3. If they get it right, move forward
-4. If still struggling, try a different explanation approach
+1. Answer their specific question directly and warmly
+2. Maybe add one related point that connects to the bigger picture
+3. Ask if that helps or if they'd like to explore any part further
 
-Don't repeat the same explanation - try a new angle or simpler example.`;
-    }
+Tone: Encouraging and conversational. "Great question! So [specific answer]..."`;
+  }
+  
+  // Handle follow-up questions 
+  if (responseContext.type === 'follow_up_question') {
+    return `
+Excellent - they're asking follow-up questions! This shows genuine curiosity.
+
+Your approach:
+1. Answer their question directly 
+2. Acknowledge their engagement: "I love that you're digging deeper..."
+3. See if this opens up any interesting connections
+
+Keep the conversation flowing naturally.`;
+  }
+  
+  // Handle wrong answers or confusion
+  if (responseContext.type === 'wrong_answer' || responseContext.type === 'struggle_indicator') {
+    const gapAnalysis = analyzeKnowledgeGaps(context, currentSubtopic);
+    const naturallyDiscussed = analyzeNaturalCoverage(context.history, gapAnalysis.gaps);
+    
+    return `
+They're working through some challenging concepts in ${currentSubtopic.title}.
+
+${generateKindRemediationGuidance(gapAnalysis.gaps, gapAnalysis.primaryGap, naturallyDiscussed)}
+
+Tone: Supportive and encouraging. Start with something positive about their attempt, then gently guide them to the right understanding.`;
   }
   
   // ALWAYS prioritize fundamentals - even confident students must prove basic understanding
@@ -380,46 +603,107 @@ Don't repeat the same explanation - try a new angle or simpler example.`;
     switch (lastAssessment.nextAction) {
       case 'continue_parent':
         if (isStudentStruggling) {
-          return `They're confused about ${currentSubtopic.title}. Be gentle and supportive. Break it down to the basics.`;
+          return `They're finding ${currentSubtopic.title} challenging. Be extra gentle and break things down step by step. Show them you believe in their ability to get this.`;
         } else if (isBasicTopic) {
-          return `They understand ${currentSubtopic.title} but make sure they can explain it clearly. Even good students need to nail the fundamentals.`;
+          return `They're understanding ${currentSubtopic.title} well! Make sure they can explain the fundamentals clearly - even strong students benefit from articulating the basics.`;
         } else {
-          return `They're getting ${currentSubtopic.title}. You can ask something a bit more challenging, but don't skip essential pieces.`;
+          return `They're doing well with ${currentSubtopic.title}. You can explore a bit deeper, but keep checking that the foundation is solid.`;
         }
         
       case 'explain_and_continue':
-        // **ENHANCED**: Set up for post-remediation checking
+        // **ENHANCED**: Set up for kind, thoughtful explanation
         if (isBasicTopic) {
-          return `They missed something fundamental about ${currentSubtopic.title}. Explain the basics clearly, then ask a follow-up question to verify they understood your explanation.`;
+          return `They missed something important about ${currentSubtopic.title}. Help them understand the basics in a friendly, clear way. Then check if it made sense with a gentle follow-up.`;
         } else {
-          return `They need help with ${currentSubtopic.title}. Explain what they missed, then ask a verification question to ensure the gap is filled.`;
+          return `They need some guidance with ${currentSubtopic.title}. Share what they missed in a helpful way, then see if they've got it with a friendly question.`;
         }
         
       case 'explain_thoroughly':
-        return `They really don't understand ${currentSubtopic.title}. Give a clear explanation focusing on the essentials. Follow up with a simple question to check comprehension.`;
+        return `${currentSubtopic.title} is proving tricky for them. Take your time explaining the essentials clearly and kindly. Follow up with an encouraging question to see if it clicked.`;
         
       case 'move_to_next':
         if (isBasicTopic) {
-          return `They've got the basics of ${currentSubtopic.title}. You can move to the next fundamental topic, but make sure all basics are covered first.`;
+          return `They've got the fundamentals of ${currentSubtopic.title} down! You can move forward to the next core concept, celebrating their progress.`;
         } else {
-          return `They've got ${currentSubtopic.title} down. Time to move forward, but remember - fundamentals before advanced stuff.`;
+          return `Great progress on ${currentSubtopic.title}! Time to explore what comes next, building on what they've learned.`;
         }
         
       default:
         if (isBasicTopic) {
-          return `Continue with fundamental questions about ${currentSubtopic.title}. Even good students must prove they understand the basics.`;
+          return `Continue exploring the fundamentals of ${currentSubtopic.title} with them. Make sure they really understand these building blocks.`;
         } else {
-          return `Ask about ${currentSubtopic.title}, but make sure all fundamental concepts have been covered first.`;
+          return `Keep exploring ${currentSubtopic.title}, but ensure all the foundational pieces are in place first.`;
         }
     }
   }
   
-  // Default instruction emphasizing fundamentals
+  // Default instruction with encouraging tone
   if (isBasicTopic) {
-    return `Focus on fundamental understanding of ${currentSubtopic.title}. This is critical knowledge that every student must know.`;
+    return `Focus on helping them really understand ${currentSubtopic.title}. These fundamentals are so important - take the time to make sure they've got them.`;
   } else {
-    return `Ask about ${currentSubtopic.title}, but make sure you've covered all the basics first. Advanced topics build on fundamentals.`;
+    return `Explore ${currentSubtopic.title} with them, but make sure you've covered all the basics first. Build understanding step by step.`;
   }
+}
+
+// **NEW**: Function to generate kind, contextual remediation guidance
+function generateKindRemediationGuidance(gaps: string[], primaryGap: string, naturallyDiscussed: { [gap: string]: boolean }): string {
+  if (gaps.length === 0) {
+    return "Continue supporting their learning journey.";
+  }
+  
+  const mainGap = primaryGap || gaps[0];
+  const wasDiscussed = naturallyDiscussed[mainGap] || false;
+  
+  if (wasDiscussed) {
+    return `Focus on: "${mainGap}"
+
+Since you touched on this earlier, you could say something like:
+"We talked about [concept] before, but let me help clarify the specific part about [specific detail]..."
+
+Approach: Acknowledge + Reinforce
+- Reference what you discussed before
+- Focus on the specific piece they're missing
+- Build on what they already understand`;
+  } else {
+    return `Focus on: "${mainGap}"
+
+This is new territory for them, so you can introduce it fresh:
+"Let's explore [concept] together..." or "Here's what's happening with [specific detail]..."
+
+Approach: Gentle Introduction
+- Start with what they do know
+- Connect it to this new concept
+- Check for understanding as you go`;
+  }
+}
+
+// **NEW**: Function to analyze what was naturally covered in conversation
+function analyzeNaturalCoverage(history: any[], gaps: string[]): { [gap: string]: boolean } {
+  const coverage: { [gap: string]: boolean } = {};
+  
+  // Get Carson's recent messages
+  const carsonMessages = history
+    .filter(msg => msg.role === 'assistant')
+    .slice(-6) // Look at last 6 Carson messages
+    .map(msg => msg.content.toLowerCase());
+  
+  gaps.forEach(gap => {
+    const gapLower = gap.toLowerCase();
+    
+    // Check if Carson mentioned this gap in recent conversation
+    const wasDiscussed = carsonMessages.some(content => {
+      // Look for key terms from the gap
+      const gapTerms = gapLower.split(' ').filter(term => term.length > 3);
+      const mentionedTerms = gapTerms.filter(term => content.includes(term));
+      
+      // If we mentioned most of the gap terms, likely discussed
+      return mentionedTerms.length >= Math.min(2, gapTerms.length);
+    });
+    
+    coverage[gap] = wasDiscussed;
+  });
+  
+  return coverage;
 }
 
 function analyzeKnowledgeGaps(context: PromptContext, currentSubtopic: CurrentSubtopic): GapAnalysis {
@@ -434,6 +718,16 @@ function analyzeKnowledgeGaps(context: PromptContext, currentSubtopic: CurrentSu
       confidenceScore: 0
     };
   }
+
+  // **NEW**: Coverage Analysis - What should have been covered vs. what was covered
+  const expectedConcepts = getExpectedConcepts(currentSubtopic.title, context.topic);
+  const coveredConcepts = analyzeCoveredConcepts(context.history, currentSubtopic.title);
+  const missedConcepts = expectedConcepts.filter(concept => 
+    !coveredConcepts.some((covered: string) => 
+      covered.toLowerCase().includes(concept.toLowerCase()) || 
+      concept.toLowerCase().includes(covered.toLowerCase())
+    )
+  );
 
   // **ENHANCED**: Check for improvement after remediation
   const recentStudentResponses = context.history
@@ -497,9 +791,10 @@ function analyzeKnowledgeGaps(context: PromptContext, currentSubtopic: CurrentSu
     hasSignificantGaps = false;
   }
   
-  // Extract gaps from existing assessment data
+  // **ENHANCED**: Extract gaps from multiple sources
   const gaps: string[] = [];
   
+  // Traditional gap detection (student confusion/struggle)
   if (hasSpecificGaps && !qualityImprovement) {
     gaps.push(lastAssessment.specificGaps!);
   }
@@ -512,12 +807,26 @@ function analyzeKnowledgeGaps(context: PromptContext, currentSubtopic: CurrentSu
     gaps.push(`clear explanation of ${currentSubtopic.title} concepts`);
   }
   
-  // Default gap if none identified but assessment suggests issues
-  if (gaps.length === 0 && (lastAssessment.answerQuality === 'partial' || lastAssessment.answerQuality === 'unclear') && !qualityImprovement) {
-    gaps.push(`complete understanding of ${currentSubtopic.title}`);
+  // **NEW**: Coverage-based gap detection (missed opportunities)
+  const missedOpportunityGaps: string[] = [];
+  if (missedConcepts.length > 0 && !recentlyExplained) {
+    // Only surface missed concepts if Carson hasn't recently explained things
+    missedOpportunityGaps.push(...missedConcepts.map(concept => `${concept} (not covered during discussion)`));
   }
   
-  const primaryGap = gaps.length > 0 ? gaps[0] : `understanding of ${currentSubtopic.title}`;
+  // **INTELLIGENT GAP PRIORITIZATION**: Combine all gap sources and prioritize
+  const allGaps = [...gaps, ...missedOpportunityGaps];
+  
+  // Add default gap if none identified but assessment suggests issues
+  if (allGaps.length === 0 && (lastAssessment.answerQuality === 'partial' || lastAssessment.answerQuality === 'unclear') && !qualityImprovement) {
+    allGaps.push(`complete understanding of ${currentSubtopic.title}`);
+  }
+  
+  // Use intelligent prioritization instead of arbitrary limits
+  const prioritizedGaps = prioritizeGaps(allGaps, context, currentSubtopic);
+  const finalGaps = prioritizedGaps.length > 0 ? prioritizedGaps : allGaps;
+  
+  const primaryGap = finalGaps.length > 0 ? finalGaps[0] : `understanding of ${currentSubtopic.title}`;
   
   // **ENHANCED**: Confidence based on assessment quality + improvement
   let confidenceScore = lastAssessment.answerQuality === 'excellent' ? 90 :
@@ -597,8 +906,8 @@ function analyzeKnowledgeGaps(context: PromptContext, currentSubtopic: CurrentSu
   }
   
   return {
-    hasSignificantGaps,
-    gaps,
+    hasSignificantGaps: finalGaps.length > 0,
+    gaps: finalGaps,
     primaryGap,
     confidenceScore
   };
@@ -626,6 +935,67 @@ function analyzeGapAttempts(history: any[], subtopicTitle: string): { [gap: stri
   });
   
   return attempts;
+}
+
+function analyzeCoveredConcepts(history: any[], subtopicTitle: string): string[] {
+  // Extract concepts that Carson has actually covered during conversation
+  const coveredConcepts: string[] = [];
+  
+  const carsonMessages = history.filter(msg => msg.role === 'assistant');
+  
+  carsonMessages.forEach(msg => {
+    const content = msg.content.toLowerCase();
+    
+    // Look for specific medical/educational concept indicators
+    const conceptPatterns = [
+      // Pathophysiology concepts
+      /mechanism[s]?|process[es]?|pathway[s]?|cascade/g,
+      /cellular|molecular|physiological/g,
+      
+      // Diagnosis concepts  
+      /sign[s]?|symptom[s]?|presentation[s]?/g,
+      /criteria|diagnosis|differential/g,
+      
+      // Management concepts
+      /treatment[s]?|medication[s]?|therapy|intervention[s]?/g,
+      /management|approach|protocol[s]?/g,
+      
+      // Clinical concepts
+      /complication[s]?|risk[s]?|outcome[s]?/g,
+      /prognosis|recovery|monitoring/g,
+      
+      // Specific medical terms (these would be expanded based on topic)
+      /stage[s]?|phase[s]?|level[s]?|grade[s]?/g,
+      /factor[s]?|cause[s]?|trigger[s]?/g
+    ];
+    
+         conceptPatterns.forEach(pattern => {
+       const matches = content.match(pattern);
+       if (matches) {
+         matches.forEach((match: string) => {
+           if (!coveredConcepts.includes(match)) {
+             coveredConcepts.push(match);
+           }
+         });
+       }
+     });
+    
+    // Also extract key educational phrases Carson used
+    if (content.includes('important') || content.includes('key') || content.includes('critical')) {
+      // Extract the concept being emphasized
+      const sentences = content.split(/[.!?]+/);
+             sentences.forEach((sentence: string) => {
+         if ((sentence.includes('important') || sentence.includes('key') || sentence.includes('critical')) && sentence.length < 100) {
+           const concept = sentence.replace(/.*(?:important|key|critical)\s+(?:is|concept|point|to understand|that)\s*/i, '').trim();
+           if (concept && concept.length > 3 && concept.length < 50) {
+             coveredConcepts.push(concept);
+           }
+         }
+       });
+    }
+  });
+  
+  return coveredConcepts;
 }
 
 function assessResponseQuality(response: string): number {
@@ -656,23 +1026,454 @@ function assessResponseQuality(response: string): number {
   return Math.max(20, Math.min(100, score));
 }
 
+// **NEW**: Intelligent Gap Prioritization System
+interface GapPriority {
+  gap: string;
+  priority: number;
+  category: 'critical' | 'important' | 'minor';
+  reasoning: string;
+}
+
+function prioritizeGaps(allGaps: string[], context: PromptContext, currentSubtopic: CurrentSubtopic): string[] {
+  if (allGaps.length === 0) return [];
+  
+  // Score each gap based on multiple factors
+  const scoredGaps: GapPriority[] = allGaps.map(gap => {
+    let priority = 0;
+    let category: 'critical' | 'important' | 'minor' = 'minor';
+    let reasoning = '';
+    
+    const gapLower = gap.toLowerCase();
+    const subtopicLower = currentSubtopic.title.toLowerCase();
+    const topic = context.topic?.toLowerCase() || '';
+    
+    // **1. CLINICAL IMPACT SCORING** (0-40 points)
+    if (isClinicallyRiskyGap(gapLower, subtopicLower, topic)) {
+      priority += 40;
+      category = 'critical';
+      reasoning += 'Patient safety risk. ';
+    }
+    
+    // **2. FOUNDATION CONCEPT SCORING** (0-30 points)
+    if (isFoundationConcept(gapLower, subtopicLower)) {
+      priority += 30;
+      if (category !== 'critical') category = 'important';
+      reasoning += 'Blocks future learning. ';
+    }
+    
+    // **3. STUDENT CONFUSION LEVEL** (0-20 points)
+    const confusionLevel = assessStudentConfusion(gap, context);
+    priority += confusionLevel;
+    reasoning += `Confusion level: ${confusionLevel}/20. `;
+    
+    // **4. FREQUENCY/RELEVANCE** (0-10 points)
+    if (isFrequentlyTested(gapLower, subtopicLower)) {
+      priority += 10;
+      reasoning += 'High-yield concept. ';
+    }
+    
+    return { gap, priority, category, reasoning };
+  });
+  
+  // Sort by priority (highest first)
+  scoredGaps.sort((a, b) => b.priority - a.priority);
+  
+  // **INTELLIGENT SELECTION LOGIC**
+  const selectedGaps: string[] = [];
+  
+  // Always include CRITICAL gaps (up to 3)
+  const criticalGaps = scoredGaps.filter(g => g.category === 'critical').slice(0, 3);
+  selectedGaps.push(...criticalGaps.map(g => g.gap));
+  
+  // Add IMPORTANT gaps if we have cognitive space (total limit: 4-5 concepts)
+  if (selectedGaps.length < 4) {
+    const importantGaps = scoredGaps
+      .filter(g => g.category === 'important' && !selectedGaps.includes(g.gap))
+      .slice(0, 4 - selectedGaps.length);
+    selectedGaps.push(...importantGaps.map(g => g.gap));
+  }
+  
+  // Add one MINOR gap if we have room and cognitive load is low
+  if (selectedGaps.length < 3) {
+    const minorGaps = scoredGaps
+      .filter(g => g.category === 'minor' && !selectedGaps.includes(g.gap))
+      .slice(0, 1);
+    selectedGaps.push(...minorGaps.map(g => g.gap));
+  }
+  
+  return selectedGaps;
+}
+
+function isClinicallyRiskyGap(gap: string, subtopic: string, topic: string): boolean {
+  const riskIndicators = [
+    // Diagnosis risks
+    'differential diagnosis', 'red flags', 'emergency', 'urgent', 'life threatening',
+    'signs', 'symptoms', 'presentation', 'recognition',
+    
+    // Treatment risks  
+    'contraindications', 'dosing', 'side effects', 'drug interactions',
+    'management', 'treatment', 'intervention', 'medication',
+    
+    // Monitoring risks
+    'complications', 'monitoring', 'follow up', 'adverse',
+    
+    // High-stakes conditions
+    'cardiac', 'respiratory', 'neurological', 'sepsis', 'shock'
+  ];
+  
+  return riskIndicators.some(indicator => 
+    gap.includes(indicator) || subtopic.includes(indicator) || topic.includes(indicator)
+  );
+}
+
+function isFoundationConcept(gap: string, subtopic: string): boolean {
+  const foundationIndicators = [
+    'pathophysiology', 'mechanism', 'basic understanding', 'fundamental',
+    'definition', 'classification', 'anatomy', 'physiology',
+    'etiology', 'causes', 'risk factors'
+  ];
+  
+  return foundationIndicators.some(indicator => 
+    gap.includes(indicator) || subtopic.includes(indicator)
+  );
+}
+
+function assessStudentConfusion(gap: string, context: PromptContext): number {
+  // Analyze recent conversation for confusion indicators related to this gap
+  const recentMessages = context.history.slice(-6);
+  const studentMessages = recentMessages.filter(msg => msg.role === 'user');
+  
+  let confusionScore = 0;
+  
+  studentMessages.forEach(msg => {
+    const content = msg.content.toLowerCase();
+    
+    // Strong confusion indicators (+15)
+    if (content.includes('i don\'t understand') || content.includes('i\'m confused')) {
+      confusionScore += 15;
+    }
+    
+    // Moderate confusion (+10)
+    if (content.includes('not sure') || content.includes('i think') || content.includes('maybe')) {
+      confusionScore += 10;
+    }
+    
+    // Question patterns (+8)
+    if (content.includes('what is') || content.includes('how does') || content.includes('why')) {
+      confusionScore += 8;
+    }
+    
+    // Uncertainty language (+5)
+    if (content.includes('i guess') || content.includes('probably') || content.includes('might be')) {
+      confusionScore += 5;
+    }
+  });
+  
+  return Math.min(20, confusionScore);
+}
+
+function isFrequentlyTested(gap: string, subtopic: string): boolean {
+  const highYieldIndicators = [
+    'diagnosis', 'treatment', 'management', 'complications',
+    'first line', 'gold standard', 'most common', 'typical',
+    'classic', 'key', 'important', 'essential'
+  ];
+  
+  return highYieldIndicators.some(indicator => 
+    gap.includes(indicator) || subtopic.includes(indicator)
+  );
+}
+
 function getExpectedConcepts(subtopic: string, topic: string): string[] {
-  // Return expected concepts based on subtopic and topic
-  // This is a simplified version - could be expanded with more sophisticated mapping
-  const conceptMap: Record<string, string[]> = {
-    'pathophysiology': ['mechanism', 'process', 'cellular changes', 'physiological impact'],
-    'diagnosis': ['signs', 'symptoms', 'diagnostic criteria', 'differential diagnosis'],
-    'management': ['treatment options', 'medications', 'interventions', 'monitoring'],
-    'complications': ['potential risks', 'adverse outcomes', 'prevention strategies'],
-    'prognosis': ['outcomes', 'recovery timeline', 'prognostic factors']
+  // Enhanced concept mapping based on subtopic and medical topic
+  const subtopicLower = subtopic.toLowerCase();
+  const topicLower = topic.toLowerCase();
+  
+  // General medical concept frameworks
+  const generalConcepts: Record<string, string[]> = {
+    'pathophysiology': ['underlying mechanism', 'cellular process', 'disease progression', 'physiological changes'],
+    'diagnosis': ['clinical presentation', 'diagnostic criteria', 'differential diagnosis', 'diagnostic tests'],
+    'management': ['treatment approach', 'therapeutic options', 'monitoring requirements', 'patient education'],
+    'complications': ['potential risks', 'adverse outcomes', 'risk factors', 'prevention strategies'],
+    'prognosis': ['expected outcomes', 'prognostic factors', 'recovery timeline', 'long-term implications']
   };
   
-  const subtopicLower = subtopic.toLowerCase();
-  for (const [key, concepts] of Object.entries(conceptMap)) {
+  // Topic-specific concept additions
+  const topicSpecificConcepts: Record<string, Record<string, string[]>> = {
+    'labour': {
+      'stages': ['latent phase', 'active phase', 'transitional phase', 'cervical dilation', 'descent of fetus'],
+      'physiology': ['uterine contractions', 'hormonal control', 'cervical changes', 'fetal positioning'],
+      'management': ['pain relief options', 'monitoring fetal wellbeing', 'delivery assistance', 'third stage management']
+    },
+    'uterine fibroids': {
+      'pathophysiology': ['smooth muscle proliferation', 'hormonal influence', 'growth factors', 'vascular supply'],
+      'symptoms': ['menorrhagia', 'bulk symptoms', 'pressure effects', 'fertility impact'],
+      'management': ['medical therapy', 'surgical options', 'minimally invasive procedures', 'expectant management']
+    }
+  };
+  
+  let expectedConcepts: string[] = [];
+  
+  // Get general concepts for the subtopic type
+  for (const [key, concepts] of Object.entries(generalConcepts)) {
     if (subtopicLower.includes(key)) {
-      return concepts;
+      expectedConcepts.push(...concepts);
     }
   }
   
-  return ['basic understanding', 'clinical relevance', 'key principles'];
+  // Add topic-specific concepts
+  if (topicSpecificConcepts[topicLower]) {
+    for (const [key, concepts] of Object.entries(topicSpecificConcepts[topicLower])) {
+      if (subtopicLower.includes(key)) {
+        expectedConcepts.push(...concepts);
+      }
+    }
+  }
+  
+  // Fallback if no specific mapping found
+  if (expectedConcepts.length === 0) {
+    expectedConcepts = ['key concepts', 'clinical significance', 'practical application'];
+  }
+  
+  return expectedConcepts;
+}
+
+/**
+ * Analyzes the context and type of student's last response to determine appropriate action
+ */
+function analyzeResponseContext(context: PromptContext): ResponseContext {
+  if (!context.history || context.history.length < 2) {
+    return {
+      type: 'regular_response',
+      confidence: 50,
+      reasoning: 'No conversation history to analyze',
+      requiresDirectAnswer: false,
+      shouldTriggerGapAnalysis: false,
+      suggestedAction: 'continue_conversation'
+    };
+  }
+
+  const lastStudentMessage = context.history[context.history.length - 1];
+  const studentText = lastStudentMessage?.content?.toLowerCase() || '';
+  
+  // 1. CLARIFICATION QUESTIONS - Single terms, question words, "what is", etc.
+  const clarificationPatterns = [
+    /^[a-z\s]{1,20}\?$/,  // Short questions like "pedunculated fibroids?"
+    /^what'?s?\s+/,       // "what's", "what is"
+    /^can you (explain|clarify|tell me)/,
+    /^how do you/,
+    /^why does?/,
+    /^what does?\s+\w+\s+mean/,
+    /^\w+\s*\?$/,         // Single word + question mark
+    /^(define|explain|clarify)\s+/,
+    /difference between/i,
+    /what about/i
+  ];
+
+  if (clarificationPatterns.some(pattern => pattern.test(studentText))) {
+    return {
+      type: 'clarification_question',
+      confidence: 90,
+      reasoning: 'Student asking for clarification or definition',
+      requiresDirectAnswer: true,
+      shouldTriggerGapAnalysis: false,
+      suggestedAction: 'answer_directly'
+    };
+  }
+
+  // 2. STRUGGLE INDICATORS - Confusion, uncertainty, "I don't know"
+  const strugglePatterns = [
+    /i don'?t (know|understand|get it)/,
+    /i'?m (confused|lost|not sure)/,
+    /this is (hard|difficult|confusing)/,
+    /i'?m struggling with/,
+    /can you help me/,
+    /i need help/,
+    /this doesn'?t make sense/,
+    /i'?m not following/,
+    /can you explain (again|more|better)/,
+    /still don'?t understand/
+  ];
+
+  if (strugglePatterns.some(pattern => pattern.test(studentText))) {
+    return {
+      type: 'struggle_indicator',
+      confidence: 85,
+      reasoning: 'Student explicitly expressing confusion or difficulty',
+      requiresDirectAnswer: false,
+      shouldTriggerGapAnalysis: true,
+      suggestedAction: 'offer_help'
+    };
+  }
+
+  // 3. POST-EXPLANATION CONFIRMATION - "Yes" after Carson explained something
+  const previousCarsonMessage = context.history.length >= 2 ? 
+    context.history[context.history.length - 2]?.content || '' : '';
+
+  // Check if Carson just finished explaining something (ended with confirmation check)
+  const carsonJustExplained = [
+    /does that make sense\?/i,
+    /was that clear(er)?\?/i,
+    /does this help\?/i,
+    /make sense now\?/i,
+    /clearer now\?/i,
+    /does that help\?/i,
+    /understand that\?/i,
+    /following me\?/i
+  ].some(pattern => pattern.test(previousCarsonMessage));
+
+  const confirmationPatterns = [
+    /^(yes|yeah|yep|got it|understand|makes sense)\.?$/,
+    /^(i see|i get it|that makes sense|okay|ok)\.?$/,
+    /^(right|correct|exactly|absolutely)\.?$/,
+    /i understand (now|that|it)/,
+    /that helps/,
+    /makes sense now/,
+    /^thank you/,
+    /^thanks/,
+    /clearer now/,
+    /i follow/
+  ];
+
+  if (carsonJustExplained && confirmationPatterns.some(pattern => pattern.test(studentText))) {
+    return {
+      type: 'post_explanation_confirmation',
+      confidence: 85,
+      reasoning: 'Student confirming understanding after Carson explained something',
+      requiresDirectAnswer: false,
+      shouldTriggerGapAnalysis: false,
+      suggestedAction: 'check_broader_understanding'
+    };
+  }
+
+  // 4. GENERAL CONFIDENCE EXPRESSIONS - When not post-explanation
+  if (confirmationPatterns.some(pattern => pattern.test(studentText))) {
+    return {
+      type: 'confidence_expression',
+      confidence: 80,
+      reasoning: 'Student expressing understanding or agreement',
+      requiresDirectAnswer: false,
+      shouldTriggerGapAnalysis: false,
+      suggestedAction: 'transition'
+    };
+  }
+
+  // 5. FOLLOW-UP QUESTIONS - Building on previous answers
+  const followUpPatterns = [
+    /^(and|but|so|then|also|what if|how about)/,
+    /what happens (if|when|next)/,
+    /in that case/,
+    /^(okay|ok),?\s+(but|and|so|what|how)/
+  ];
+
+  if (followUpPatterns.some(pattern => pattern.test(studentText))) {
+    return {
+      type: 'follow_up_question',
+      confidence: 75,
+      reasoning: 'Student asking follow-up question showing engagement',
+      requiresDirectAnswer: true,
+      shouldTriggerGapAnalysis: false,
+      suggestedAction: 'answer_directly'
+    };
+  }
+
+  // 6. WRONG ANSWERS - Only trigger for CLEAR indicators of confusion/incorrect knowledge
+  const wasQuestionAsked = /\?/.test(previousCarsonMessage);
+  
+  if (wasQuestionAsked && studentText.length > 10) {
+         // Only flag as wrong if EXTREMELY clear confusion indicators
+     const extremeConfusionIndicators = [
+       /i don'?t know/,
+       /no idea/,
+       /completely wrong/,
+       /i have no clue/,
+       /i'?m totally lost/,
+       /that doesn'?t sound right/,
+       /this makes no sense/,
+       /i'?m so confused/
+     ];
+     
+     const multipleUncertaintyWords = [
+       /not sure but.*i guess/,
+       /maybe.*probably.*i think/,
+       /could be.*might be.*not sure/
+     ];
+     
+     const hasExtremeConfusion = extremeConfusionIndicators.some(pattern => pattern.test(studentText));
+     const hasChainedUncertainty = multipleUncertaintyWords.some(pattern => pattern.test(studentText));
+     const isWayTooLong = studentText.length > 600; // Even higher threshold
+     
+     // VERY conservative - only trigger for truly confused responses
+     if (hasExtremeConfusion || (hasChainedUncertainty && isWayTooLong)) {
+      return {
+        type: 'wrong_answer',
+        confidence: 70,
+        reasoning: 'Student showing clear confusion or multiple uncertainty indicators',
+        requiresDirectAnswer: false,
+        shouldTriggerGapAnalysis: true,
+        suggestedAction: 'assess_gaps'
+      };
+    }
+  }
+
+  // 7. SYNTHESIS RESPONSE - Good comprehensive answer that should conclude conversation
+  const isLastSubtopic = context.currentSubtopicIndex === (context.subtopics.length - 1);
+  
+  if (isLastSubtopic) {
+    // Check if Carson recently asked a synthesis question
+    const recentCarsonMessages = context.history
+      .filter(msg => msg.role === 'assistant')
+      .slice(-3) // Check last 3 Carson messages
+      .map(msg => msg.content.toLowerCase());
+    
+    const synthesisQuestionPatterns = [
+      /how would you explain.*to.*medical student/,
+      /walk me through your approach/,
+      /summarize.*in.*minutes/,
+      /what.*key points.*would you hit/,
+      /synthesize.*understanding/,
+      /explain.*fellow student/,
+      /before we finish/,
+      /wrap.*up.*understanding/
+    ];
+    
+    const askedSynthesisQuestion = recentCarsonMessages.some(msg => 
+      synthesisQuestionPatterns.some(pattern => pattern.test(msg))
+    );
+    
+    if (askedSynthesisQuestion) {
+      // Check if student's response shows comprehensive understanding
+      const comprehensiveIndicators = [
+        studentText.length > 150, // Substantial response
+        /first.*second.*third|1.*2.*3/i.test(studentText), // Structured points
+        /start.*then.*finally|begin.*next.*end/i.test(studentText), // Process description
+        /important.*key.*essential/i.test(studentText), // Prioritization
+        /because.*therefore.*so/i.test(studentText), // Causal reasoning
+        context.topic && new RegExp(context.topic.split(' ').slice(0,2).join('|'), 'i').test(studentText) // Topic relevance
+      ];
+      
+      const comprehensiveScore = comprehensiveIndicators.filter(Boolean).length;
+      
+      if (comprehensiveScore >= 3) { // At least 3 indicators of good synthesis
+        return {
+          type: 'confidence_expression',
+          confidence: 95,
+          reasoning: 'Student provided comprehensive synthesis response showing mastery',
+          requiresDirectAnswer: false,
+          shouldTriggerGapAnalysis: false,
+          suggestedAction: 'conclude_gracefully'
+        };
+      }
+    }
+  }
+
+  // Default: Regular conversational response
+  return {
+    type: 'regular_response',
+    confidence: 50,
+    reasoning: 'Standard conversational response',
+    requiresDirectAnswer: false,
+    shouldTriggerGapAnalysis: false,
+    suggestedAction: 'continue_conversation'
+  };
 } 

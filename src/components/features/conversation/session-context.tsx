@@ -30,20 +30,42 @@ export function useSession() {
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<CarsonSessionContext | null>(null)
 
-  // **FIX**: Load session from localStorage on mount to restore after refresh
+  // **ENHANCED FIX**: Load session from localStorage with validation to prevent corruption
   useEffect(() => {
     const savedSession = localStorage.getItem('carsonSession')
     if (savedSession) {
       try {
         const parsedSession = JSON.parse(savedSession)
-        console.log('Restoring session from localStorage:', { 
-          sessionId: parsedSession.sessionId, 
-          topic: parsedSession.topic,
-          subtopicsCount: parsedSession.subtopics?.length || 0
-        })
-        setSession(parsedSession)
+        
+        // **VALIDATE SESSION INTEGRITY** before restoring
+        const isValidSession = (
+          parsedSession.sessionId && 
+          parsedSession.sessionId !== 'unknown' &&
+          parsedSession.topic && 
+          parsedSession.topic !== 'undefined' &&
+          Array.isArray(parsedSession.subtopics) &&
+          typeof parsedSession.currentSubtopicIndex === 'number' &&
+          Array.isArray(parsedSession.history)
+        );
+        
+        if (isValidSession) {
+          console.log('✅ [SessionProvider] Restoring valid session from localStorage:', { 
+            sessionId: parsedSession.sessionId, 
+            topic: parsedSession.topic,
+            subtopicsCount: parsedSession.subtopics?.length || 0
+          })
+          setSession(parsedSession)
+        } else {
+          console.warn('❌ [SessionProvider] Invalid session detected in localStorage, clearing:', {
+            sessionId: parsedSession.sessionId,
+            topic: parsedSession.topic,
+            hasValidId: !!parsedSession.sessionId,
+            hasValidTopic: !!parsedSession.topic
+          })
+          localStorage.removeItem('carsonSession')
+        }
       } catch (error) {
-        console.error('Failed to restore session from localStorage:', error)
+        console.error('❌ [SessionProvider] Failed to restore session from localStorage:', error)
         localStorage.removeItem('carsonSession')
       }
     }
@@ -86,7 +108,40 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const updateSession = (updates: Partial<CarsonSessionContext>) => {
     setSession((prev) => {
       if (!prev) return null
-      return { ...prev, ...updates }
+      
+      // **VALIDATE UPDATES** to prevent corruption
+      const validatedUpdates = { ...updates };
+      
+      // Ensure core fields never become undefined/invalid
+      if ('sessionId' in updates && (!updates.sessionId || updates.sessionId === 'unknown')) {
+        console.warn('❌ [SessionProvider] Preventing sessionId corruption:', updates.sessionId)
+        delete validatedUpdates.sessionId
+      }
+      
+      if ('topic' in updates && (!updates.topic || updates.topic === 'undefined')) {
+        console.warn('❌ [SessionProvider] Preventing topic corruption:', updates.topic)
+        delete validatedUpdates.topic
+      }
+      
+      if ('currentSubtopicIndex' in updates && typeof updates.currentSubtopicIndex !== 'number') {
+        console.warn('❌ [SessionProvider] Preventing currentSubtopicIndex corruption:', updates.currentSubtopicIndex)
+        delete validatedUpdates.currentSubtopicIndex
+      }
+      
+      const newSession = { ...prev, ...validatedUpdates }
+      
+      // **FINAL VALIDATION**: Ensure session integrity
+      if (!newSession.sessionId || !newSession.topic || newSession.sessionId === 'unknown' || newSession.topic === 'undefined') {
+        console.error('❌ [SessionProvider] Session corruption detected, preserving original:', {
+          originalSessionId: prev.sessionId,
+          originalTopic: prev.topic,
+          updatedSessionId: newSession.sessionId,
+          updatedTopic: newSession.topic
+        })
+        return prev // Return original session if corruption detected
+      }
+      
+      return newSession
     })
   }
 
@@ -156,6 +211,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }
 
   const clearSession = () => {
+    console.log('🧹 [SessionProvider] Clearing session')
     setSession(null)
     localStorage.removeItem('carsonSession')
   }

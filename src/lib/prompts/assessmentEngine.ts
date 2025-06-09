@@ -324,7 +324,7 @@ Analysis:`;
       subtopics: [],
       currentSubtopicIndex: 0,
       history: [],
-      currentQuestionType: 'follow_up',
+      currentQuestionType: 'parent',
       questionsAskedInCurrentSubtopic: 0,
       correctAnswersInCurrentSubtopic: 0,
       currentSubtopicState: 'assessing',
@@ -614,7 +614,7 @@ Assessment:`;
       subtopics: [],
       currentSubtopicIndex: 0,
       history: [],
-      currentQuestionType: 'follow_up',
+      currentQuestionType: 'parent',
       questionsAskedInCurrentSubtopic: 0,
       correctAnswersInCurrentSubtopic: 0,
       currentSubtopicState: 'assessing',
@@ -916,7 +916,7 @@ function generateReasoningForAssessment(
     case 'continue_conversation':
       return generateContextualResponse('question', {
         subtopic: subtopicTitle,
-        questionType: 'follow_up',
+        questionType: 'parent',
         answerQuality: answerQuality,
         isStruggling: answerQuality === 'confused' || answerQuality === 'incorrect',
         specificGaps,
@@ -982,7 +982,7 @@ export function updateSessionAfterAssessment(
   // Update subtopic state based on next action
   switch (assessment.nextAction) {
     case 'continue_conversation':
-      updates.currentQuestionType = 'follow_up';
+      updates.currentQuestionType = 'parent';
       updates.currentSubtopicState = 'assessing';
       break;
       
@@ -2513,7 +2513,7 @@ export function resetSubtopicContext(
     currentSubtopicState: 'assessing',
     questionsAskedInCurrentSubtopic: 0,
     correctAnswersInCurrentSubtopic: 0,
-    currentQuestionType: 'follow_up',
+    currentQuestionType: 'parent',
     shouldTransition: false,
     
     // Fresh history - only keep topic introduction, discard subtopic conversations

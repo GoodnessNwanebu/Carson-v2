@@ -16,12 +16,41 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "OpenAI API key not configured" }, { status: 500 });
     }
 
+    // Enhanced file validation and format detection
+    const fileSize = audioFile.size;
+    const fileName = audioFile.name;
+    const fileType = audioFile.type;
+    
+    console.log(`[Transcribe] Processing audio file: ${fileName}, size: ${fileSize} bytes, type: ${fileType}`);
+    
+    // Validate file size (Whisper has 25MB limit)
+    if (fileSize > 25 * 1024 * 1024) {
+      return NextResponse.json({ 
+        error: "Audio file too large", 
+        details: "Maximum file size is 25MB" 
+      }, { status: 400 });
+    }
+    
+    // Validate file type - Whisper supports multiple formats
+    const supportedTypes = [
+      'audio/webm', 'audio/mp4', 'audio/wav', 'audio/m4a', 
+      'audio/mpeg', 'audio/mp3', 'audio/ogg', 'audio/flac'
+    ];
+    
+    if (!supportedTypes.some(type => fileType.includes(type.split('/')[1]))) {
+      console.warn(`[Transcribe] Potentially unsupported file type: ${fileType}, proceeding anyway...`);
+    }
+
     // Create FormData for OpenAI API
     const openaiFormData = new FormData();
     openaiFormData.append('file', audioFile);
     openaiFormData.append('model', 'whisper-1');
     openaiFormData.append('language', 'en'); // Force English for medical terminology
     openaiFormData.append('response_format', 'json');
+    
+    // Add prompt to improve medical terminology accuracy
+    const medicalPrompt = "This is a medical education conversation containing medical terms, anatomical references, disease names, and clinical terminology.";
+    openaiFormData.append('prompt', medicalPrompt);
     
     // Call OpenAI Whisper API
     const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
@@ -43,9 +72,23 @@ export async function POST(req: NextRequest) {
 
     const result = await response.json();
     
+    console.log(`[Transcribe] Transcription successful: "${result.text}" (${result.duration || 'unknown'}s)`);
+    
+    // Clean and validate transcript
+    const transcript = result.text?.trim() || '';
+    
+    if (!transcript) {
+      console.warn('[Transcribe] Empty transcript received');
+      return NextResponse.json({ 
+        error: "No speech detected", 
+        details: "Please try speaking more clearly or check your microphone" 
+      }, { status: 400 });
+    }
+    
     return NextResponse.json({ 
-      transcript: result.text,
-      duration: result.duration || null 
+      transcript,
+      duration: result.duration || null,
+      confidence: result.confidence || null
     });
 
   } catch (error) {
