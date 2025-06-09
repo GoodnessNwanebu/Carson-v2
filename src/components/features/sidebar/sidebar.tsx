@@ -61,8 +61,8 @@ export function Sidebar({ onNewChat }: SidebarProps) {
         )}
       >
         {/* Top section with logo and new chat */}
-        <div className="p-4 border-b border-gray-800 dark:border-gray-700">
-          <div className={cn("flex items-center mb-6", collapsed ? "md:justify-center justify-between" : "justify-between")}>
+        <div className={cn("border-b border-gray-800 dark:border-gray-700", collapsed ? "md:px-4 md:py-6 px-6 py-6" : "p-6")}>
+          <div className={cn("flex items-center mb-8", collapsed ? "md:justify-center justify-between" : "justify-between")}>
             {/* Logo - always show on mobile, show on desktop when not collapsed */}
             <div className={cn("flex items-center gap-3", collapsed && "md:hidden")}>
               <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
@@ -96,11 +96,11 @@ export function Sidebar({ onNewChat }: SidebarProps) {
               {collapsed ? "→" : "←"}
             </Button>
           </div>
-          <div className="mb-6">
+          <div className={cn("mb-8", collapsed ? "md:mx-0" : "mx-2")}>
             {/* New conversation button - clean responsive design */}
             <Button
               className={cn(
-                "w-full transition-all duration-200 font-medium px-4 py-3 justify-start gap-3 text-white rounded-xl shadow-lg hover:shadow-xl bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800",
+                "w-full transition-all duration-200 font-medium px-6 py-4 justify-start gap-3 text-white rounded-xl shadow-lg hover:shadow-xl bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 min-h-[48px]",
                 // Desktop collapsed: override to icon-only style
                 collapsed && "md:w-10 md:h-10 md:mx-auto md:p-0 md:text-gray-300 md:hover:text-white md:hover:bg-gray-800 md:justify-center md:bg-none md:from-transparent md:to-transparent md:hover:from-transparent md:hover:to-transparent md:shadow-none md:rounded-md"
               )}
@@ -168,7 +168,7 @@ export function Sidebar({ onNewChat }: SidebarProps) {
         </div>
 
         {/* Bottom section with settings and profile */}
-        <div className="border-t border-gray-800 dark:border-gray-700 p-4">
+        <div className="border-t border-gray-800 dark:border-gray-700 px-4 py-4">
           <div className="space-y-4 pt-2">
             <NavItem 
               icon={Settings} 
