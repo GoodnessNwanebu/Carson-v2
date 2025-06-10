@@ -618,7 +618,7 @@ export function Conversation({
         ref={scrollContainerRef}
         className={cn(
           "flex-1 overflow-y-scroll pb-4 md:pb-6 bg-gray-50 dark:bg-gray-900 px-1 md:px-4",
-          showStickyHeader && isScrolled ? "pt-[80px]" : "pt-4" // Adjust padding when sticky header is visible
+          showStickyHeader && isScrolled ? "pt-[80px]" : "pt-16" // More top padding to account for knowledge map toggle
         )}
         data-conversation-scroll
         style={{ 
