@@ -1,6 +1,6 @@
 "use client"
 
-import React, { createContext, useContext, useState, useEffect, ReactNode } from "react"
+import React, { createContext, useContext, useState, useEffect, useRef, ReactNode } from "react"
 import { CarsonSessionContext, Message } from "@/lib/prompts/carsonTypes"
 import { v4 as uuidv4 } from 'uuid';
 
@@ -15,6 +15,7 @@ interface SessionContextType {
   isSessionComplete: () => boolean
   clearSession: () => void
   resetSession: () => void
+  completeSessionAndGenerateNotes: () => Promise<any>
 }
 
 const SessionContext = createContext<SessionContextType | null>(null)
@@ -29,6 +30,9 @@ export function useSession() {
 
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<CarsonSessionContext | null>(null)
+  const [isSaving, setIsSaving] = useState(false)
+  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const lastSavedSessionRef = useRef<string | null>(null)
 
   // **ENHANCED FIX**: Load session from localStorage with validation to prevent corruption
   useEffect(() => {
@@ -55,6 +59,17 @@ export function SessionProvider({ children }: { children: ReactNode }) {
             subtopicsCount: parsedSession.subtopics?.length || 0
           })
           setSession(parsedSession)
+          
+          // **NEW**: Reset the last saved session hash to prevent immediate duplicate saves
+          const sessionHash = JSON.stringify({
+            sessionId: parsedSession.sessionId,
+            topic: parsedSession.topic,
+            subtopicsCount: parsedSession.subtopics?.length || 0,
+            historyLength: parsedSession.history?.length || 0,
+            currentSubtopicIndex: parsedSession.currentSubtopicIndex,
+            isComplete: parsedSession.isComplete
+          })
+          lastSavedSessionRef.current = sessionHash
         } else {
           console.warn('❌ [SessionProvider] Invalid session detected in localStorage, clearing:', {
             sessionId: parsedSession.sessionId,
@@ -77,6 +92,15 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       localStorage.setItem('carsonSession', JSON.stringify(session));
     }
   }, [session]);
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current)
+      }
+    }
+  }, [])
 
   const startSession = (topic: string, sessionId?: string) => {
     setSession({
@@ -141,8 +165,113 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         return prev // Return original session if corruption detected
       }
       
+      // **NEW**: Debounced auto-save to database when session updates
+      debouncedSaveToDatabase(newSession)
+      
       return newSession
     })
+  }
+
+  // **NEW**: Debounced save to prevent duplicate database calls
+  const debouncedSaveToDatabase = (sessionData: CarsonSessionContext) => {
+    // Clear existing timeout
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current)
+    }
+
+    // Create session hash to detect if session actually changed
+    const sessionHash = JSON.stringify({
+      sessionId: sessionData.sessionId,
+      topic: sessionData.topic,
+      subtopicsCount: sessionData.subtopics?.length || 0,
+      historyLength: sessionData.history?.length || 0,
+      currentSubtopicIndex: sessionData.currentSubtopicIndex,
+      isComplete: sessionData.isComplete
+    })
+
+    // Skip save if session hasn't actually changed
+    if (lastSavedSessionRef.current === sessionHash) {
+      console.log('⏭️ [SessionProvider] Session unchanged, skipping database save')
+      return
+    }
+
+    // Set new timeout for debounced save
+    saveTimeoutRef.current = setTimeout(() => {
+      saveSessionToDatabase(sessionData, sessionHash)
+    }, 1000) // 1 second debounce
+  }
+
+  // **NEW**: Save session to database with duplicate prevention
+  const saveSessionToDatabase = async (sessionData: CarsonSessionContext, sessionHash: string) => {
+    // Prevent concurrent saves
+    if (isSaving) {
+      console.log('⏳ [SessionProvider] Save already in progress, skipping')
+      return
+    }
+
+    setIsSaving(true)
+    
+    try {
+      const response = await fetch('/api/sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(sessionData)
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to save session')
+      }
+
+      // Update last saved session hash
+      lastSavedSessionRef.current = sessionHash
+      console.log('✅ [SessionProvider] Session auto-saved to database')
+    } catch (error) {
+      console.error('❌ [SessionProvider] Database save failed:', error)
+      // Don't throw - continue with local session management
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  // **NEW**: Generate study notes when session completes
+  const completeSessionAndGenerateNotes = async () => {
+    if (!session) return null
+    
+    try {
+      // 1. Mark session as complete and save
+      const completedSession = { ...session, isComplete: true }
+      const sessionHash = JSON.stringify({
+        sessionId: completedSession.sessionId,
+        topic: completedSession.topic,
+        subtopicsCount: completedSession.subtopics?.length || 0,
+        historyLength: completedSession.history?.length || 0,
+        currentSubtopicIndex: completedSession.currentSubtopicIndex,
+        isComplete: completedSession.isComplete
+      })
+      await saveSessionToDatabase(completedSession, sessionHash)
+      
+      // 2. Generate study notes
+      console.log('📝 [SessionProvider] Generating study notes for session:', session.sessionId)
+      const response = await fetch('/api/study-notes/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: session.sessionId })
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to generate study notes')
+      }
+
+      const { notes } = await response.json()
+      console.log('✅ [SessionProvider] Study notes generated successfully')
+      
+      return notes
+    } catch (error) {
+      console.error('❌ [SessionProvider] Failed to generate study notes:', error)
+      return null
+    }
   }
 
   const updateSubtopicStatus = (subtopicIndex: number, status: 'gap' | 'shaky' | 'understood') => {
@@ -233,7 +362,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         checkSubtopicCompletion,
         isSessionComplete,
         clearSession,
-        resetSession
+        resetSession,
+        completeSessionAndGenerateNotes
       }}
     >
       {children}

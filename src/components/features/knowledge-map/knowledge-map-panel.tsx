@@ -62,7 +62,7 @@ export function KnowledgeMapPanel() {
       <button
         onClick={toggleMap}
         className={cn(
-          "fixed z-[80] p-2 bg-white rounded-full shadow-xl hover:bg-gray-100 transition-all duration-200 drop-shadow-lg hover:shadow-2xl",
+          "fixed z-[90] p-2 bg-white rounded-full shadow-xl hover:bg-gray-100 transition-all duration-200 drop-shadow-lg hover:shadow-2xl",
           // Always stay in normal position - above header
           "top-4 right-4"
         )}
@@ -74,7 +74,7 @@ export function KnowledgeMapPanel() {
       {/* Knowledge map panel */}
       <div
         className={cn(
-          "fixed inset-y-0 right-0 z-30 w-[320px] bg-white shadow-2xl transition-transform duration-300 transform drop-shadow-2xl",
+          "fixed inset-y-0 right-0 z-[85] w-[320px] bg-white shadow-2xl transition-transform duration-300 transform drop-shadow-2xl",
           isMapOpen ? "translate-x-0" : "translate-x-full",
           "flex flex-col",
         )}
@@ -183,7 +183,7 @@ export function KnowledgeMapPanel() {
 
       {/* Mobile backdrop overlay when map is open */}
       {isMobile && isMapOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-20" onClick={toggleMap} aria-hidden="true" />
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-[82]" onClick={toggleMap} aria-hidden="true" />
       )}
     </>
   )

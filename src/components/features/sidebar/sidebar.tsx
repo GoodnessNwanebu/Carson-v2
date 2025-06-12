@@ -120,7 +120,7 @@ export function Sidebar({ onNewChat }: SidebarProps) {
 
         {/* Middle section with main navigation */}
         <div className="flex-1 overflow-auto px-4 py-6">
-          <div className="space-y-2">
+          <nav className="space-y-2">
             <NavItem 
               icon={Clock} 
               label="Recents" 
@@ -164,7 +164,7 @@ export function Sidebar({ onNewChat }: SidebarProps) {
                 </div>
               )}
             </div>
-          </div>
+          </nav>
         </div>
 
         {/* Bottom section with settings and profile */}
@@ -206,20 +206,22 @@ interface NavItemProps {
 
 function NavItem({ icon: Icon, label, collapsed, active, onClick }: NavItemProps) {
   return (
-    <Button
-      variant="ghost"
-      className={cn(
-        "text-gray-300 hover:text-white hover:bg-gray-800 dark:hover:bg-gray-800",
-        active && "bg-gray-800 dark:bg-gray-800 text-white",
-        // Mobile: always full width, Desktop: collapsed/expanded based on state
-        "w-full justify-start gap-3 py-3 px-3 text-base md:w-auto",
-        collapsed && "md:w-10 md:h-10 md:p-0 md:mx-auto md:justify-center"
-      )}
-      onClick={onClick}
-    >
-      <Icon size={16} />
-      <span className={cn("", collapsed && "md:hidden")}>{label}</span>
-    </Button>
+    <div className="block w-full">
+      <Button
+        variant="ghost"
+        className={cn(
+          "text-gray-300 hover:text-white hover:bg-gray-800 dark:hover:bg-gray-800",
+          active && "bg-gray-800 dark:bg-gray-800 text-white",
+          // Mobile: always full width, Desktop: collapsed/expanded based on state
+          "w-full justify-start gap-3 py-3 px-3 text-base",
+          collapsed && "md:w-10 md:h-10 md:p-0 md:mx-auto md:justify-center"
+        )}
+        onClick={onClick}
+      >
+        <Icon size={16} />
+        <span className={cn("", collapsed && "md:hidden")}>{label}</span>
+      </Button>
+    </div>
   )
 }
 

@@ -124,6 +124,60 @@ Return your response as a JSON object with this structure:
 `.trim();
   }
 
+  // **NEW**: Handle completion choice state
+  if (safeContext.currentSubtopicState === 'completion_choice') {
+    const lastUserMessage = safeContext.history[safeContext.history.length - 1]?.content || '';
+    
+    // Check if student wants to generate notes
+    if (containsNotesRequest(lastUserMessage)) {
+      return `
+You're Carson, and the student just asked you to generate study notes for their session on ${safeContext.topic}.
+
+**STUDENT REQUEST**: "${lastUserMessage}"
+
+Your response:
+1. "Absolutely! Let me create some personalized notes for you."
+2. "I'll capture the key points we covered and areas where you really excelled."
+3. "This will take just a moment..."
+
+**IMPORTANT**: This triggers note generation. After this response, the system will automatically generate and save notes to their journal.
+
+Be encouraging and let them know the notes will appear in their journal tab.
+`.trim();
+    }
+    
+    // Check if student wants to study another topic
+    if (containsNewTopicRequest(lastUserMessage)) {
+      return `
+You're Carson, and the student wants to study another topic.
+
+**STUDENT REQUEST**: "${lastUserMessage}"
+
+Your response:
+1. "Great idea! I love seeing students eager to keep learning."
+2. "To start a fresh conversation about a new topic, just click the 'New conversation' button in the sidebar."
+3. "That'll give us a clean slate to dive deep into whatever interests you next."
+4. "Thanks for such a great discussion about ${safeContext.topic} - you did excellent work today!"
+
+Guide them to start fresh with the new conversation button.
+`.trim();
+    }
+    
+    // Student completed session - offer the choice
+    return `
+You're Carson, and the student just completed all subtopics for ${safeContext.topic}. 
+
+**CONTEXT**: All subtopics are mastered. Time to offer completion options.
+
+Your response:
+1. "Fantastic work today! You've really mastered ${safeContext.topic}."
+2. "I'm impressed with how you worked through [mention 1-2 specific concepts they handled well]."
+3. "Now, would you like me to create some study notes for your journal that capture what we covered today? Or are you ready to dive into a new topic?"
+
+Be warm, encouraging, and give them clear options: notes OR new topic.
+`.trim();
+  }
+
   // **NEW CRITICAL FEATURE**: Response Context Analysis
   const responseContext = analyzeResponseContext(safeContext);
   
@@ -1182,6 +1236,24 @@ function isFrequentlyTested(gap: string, subtopic: string): boolean {
   return highYieldIndicators.some(indicator => 
     gap.includes(indicator) || subtopic.includes(indicator)
   );
+}
+
+// Helper functions for completion choice detection
+function containsNotesRequest(message: string): boolean {
+  const notesKeywords = ['notes', 'note', 'journal', 'save', 'store', 'write', 'record', 'keep'];
+  const lowerMessage = message.toLowerCase();
+  return notesKeywords.some(keyword => lowerMessage.includes(keyword)) ||
+         lowerMessage.includes('yes') || 
+         lowerMessage.includes('sure') ||
+         lowerMessage.includes('please');
+}
+
+function containsNewTopicRequest(message: string): boolean {
+  const newTopicKeywords = ['new', 'another', 'different', 'next', 'study', 'learn', 'topic', 'subject'];
+  const lowerMessage = message.toLowerCase();
+  return newTopicKeywords.some(keyword => lowerMessage.includes(keyword)) ||
+         lowerMessage.includes('start over') ||
+         lowerMessage.includes('something else');
 }
 
 function getExpectedConcepts(subtopic: string, topic: string): string[] {

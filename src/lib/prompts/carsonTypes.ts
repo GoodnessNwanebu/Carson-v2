@@ -42,7 +42,7 @@ export interface CarsonSessionContext {
   currentSubtopicIndex: number;
   
   // Current subtopic state tracking
-  currentSubtopicState: 'assessing' | 'explaining' | 'checking' | 'complete';
+  currentSubtopicState: 'assessing' | 'explaining' | 'checking' | 'complete' | 'completion_choice';
   currentQuestionType: 'parent' | 'child' | 'checkin';
   questionsAskedInCurrentSubtopic: number;
   correctAnswersInCurrentSubtopic: number;

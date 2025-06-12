@@ -106,7 +106,7 @@ export function Conversation({
   console.log("[Conversation] Component rendered");
   const [input, setInput] = useState("")
   const { updateTopicStatus, updateTopicProgress, setTopics, setCurrentTopicName, setIsLoading: setKnowledgeMapLoading, setCurrentSubtopicIndex, topics, currentTopicName } = useKnowledgeMap()
-  const { session, startSession, addMessage, updateSession, moveToNextSubtopic, checkSubtopicCompletion, isSessionComplete } = useSession()
+  const { session, startSession, addMessage, updateSession, moveToNextSubtopic, checkSubtopicCompletion, isSessionComplete, completeSessionAndGenerateNotes } = useSession()
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const { setSidebarOpen } = useSidebarState()
@@ -226,17 +226,43 @@ export function Conversation({
         // Stop knowledge map loading after subtopics are generated
         setKnowledgeMapLoading(false);
       } else {
-        // Ongoing conversation - assess user response and update session
+                // Ongoing conversation - assess user response and update session
         const userMessage = { id: uuidv4(), role: "user" as const, content: messageContent };
         
         // Add user message immediately to show in conversation
         addMessage(userMessage);
 
+        // **NEW**: Handle completion choice responses
+        if (session.currentSubtopicState === 'completion_choice') {
+          const lowerMessage = messageContent.toLowerCase();
+          
+          // Check if student wants notes
+          if (lowerMessage.includes('note') || lowerMessage.includes('journal') || lowerMessage.includes('save') || 
+              lowerMessage.includes('yes') || lowerMessage.includes('sure')) {
+            
+            // Generate study notes after Carson responds
+            setTimeout(async () => {
+              try {
+                console.log('📝 [Conversation] Generating study notes after user choice...');
+                const notes = await completeSessionAndGenerateNotes();
+                if (notes) {
+                  console.log('✅ [Conversation] Study notes generated and saved!');
+                  // TODO: Show success notification
+                }
+              } catch (error) {
+                console.error('❌ [Conversation] Failed to generate study notes:', error);
+              }
+            }, 2000); // Wait 2 seconds for Carson's response to show first
+          }
+          
+          // Continue with normal LLM call to let Carson respond appropriately
+        }
+
         // Assess the user's response if we have subtopics and a previous question
         let sessionUpdates: Partial<CarsonSessionContext> = {};
         let assessmentResult = null;
         
-        if (session.subtopics.length > 0 && lastCarsonQuestion) {
+        if (session.subtopics.length > 0 && lastCarsonQuestion && session.currentSubtopicState !== 'completion_choice') {
           assessmentResult = await assessUserResponse(messageContent, session);
           
           // Only update session if we got an actual assessment (not null for conversational responses)
@@ -279,7 +305,7 @@ export function Conversation({
         const updatedSession = {
           ...session,
           ...sessionUpdates,
-          history: [...session.history, userMessage],
+                      history: [...session.history, userMessage],
           lastAssessment: assessmentResult ? {
             answerQuality: assessmentResult.answerQuality,
             nextAction: assessmentResult.nextAction,
@@ -348,7 +374,7 @@ export function Conversation({
         // **ATOMIC SESSION UPDATE**: Combine all updates into single call to prevent racing
         const finalSessionUpdates = {
           ...sessionUpdates,
-          history: [...session.history, userMessage, assistantMessage]
+                      history: [...session.history, userMessage, assistantMessage]
         };
         
         // Check if current subtopic should be completed and add transition flag
@@ -379,6 +405,11 @@ export function Conversation({
             setCurrentSubtopicIndex(session.currentSubtopicIndex + 1);
           } else if (isSessionComplete()) {
             console.log("[Conversation] Session completed! All subtopics mastered.");
+            // **NEW**: Set session to completion state - Carson will offer options
+            updateSession({ 
+              isComplete: true,
+              currentSubtopicState: 'completion_choice' // New state for handling completion options
+            });
           }
         }
       }
