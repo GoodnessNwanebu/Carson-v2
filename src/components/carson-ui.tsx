@@ -157,7 +157,7 @@ function CarsonUIContent() {
     setTimeout(() => {
       setIsLoading(false)
       setInitialTopic(submittedQuery)
-    }, 250) // Earlier switch
+    }, 350) // Content appears near transition end
     
     setTimeout(() => {
       setIsTransitioning(false)
