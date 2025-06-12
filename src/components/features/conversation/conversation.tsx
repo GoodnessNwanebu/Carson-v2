@@ -535,7 +535,7 @@ export function Conversation({
       submitMessage(initialTopic);
       // Clear initial topic after transition completes
       if (onInitialTopicUsed) {
-        setTimeout(() => onInitialTopicUsed(), 200);
+        setTimeout(() => onInitialTopicUsed(), 100);
       }
     }
     // eslint-disable-next-line

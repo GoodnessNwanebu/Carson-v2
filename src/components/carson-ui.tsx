@@ -149,21 +149,19 @@ function CarsonUIContent() {
     const submittedQuery = query // Capture immediately to prevent race conditions
     setIsLoading(true)
     
-    // Start transition after brief loading indication
+    // Apple-style: Faster, more decisive timing
     setTimeout(() => {
       setIsTransitioning(true)
-    }, 200)
+    }, 150) // Quicker start
     
-    // Set topic and end loading during transition
     setTimeout(() => {
       setIsLoading(false)
       setInitialTopic(submittedQuery)
-    }, 400)
+    }, 250) // Earlier switch
     
-    // End transition after content has loaded
     setTimeout(() => {
       setIsTransitioning(false)
-    }, 800) // More balanced timing
+    }, 400) // Snappier end
   }
 
   // Reset to home screen (new chat) - user controls sidebar manually
