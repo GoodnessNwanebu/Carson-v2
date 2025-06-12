@@ -12,6 +12,7 @@ import { callLLM } from "@/lib/prompts/llm-service"
 import { CarsonSessionContext } from "@/lib/prompts/carsonTypes"
 import { v4 as uuidv4 } from 'uuid';
 import { assessUserResponseV2Parallel as assessUserResponse, AssessmentResult, ResponseType, updateSessionAfterAssessment } from "@/lib/prompts/assessmentEngine";
+import { detectConversationalIntent } from "@/lib/prompts/conversational-intelligence";
 import { CompletionCelebration } from "../knowledge-map/knowledge-map-animations";
 import { Button } from "@/components/ui/button"
 
@@ -263,41 +264,58 @@ export function Conversation({
         let assessmentResult = null;
         
         if (session.subtopics.length > 0 && lastCarsonQuestion && session.currentSubtopicState !== 'completion_choice') {
-          assessmentResult = await assessUserResponse(messageContent, session);
+          // **NEW**: First check if this is a conversational question
+          const conversationalIntent = detectConversationalIntent(messageContent, session);
           
-          // Only update session if we got an actual assessment (not null for conversational responses)
-          if (assessmentResult) {
-            sessionUpdates = updateSessionAfterAssessment(session, assessmentResult);
-            
-            console.log("[Conversation] Assessment result:", assessmentResult);
-            
-            // Update knowledge map progress and status based on assessment
-            const currentSubtopic = session.subtopics[session.currentSubtopicIndex];
-            if (currentSubtopic) {
-              // Update progress tracking
-              updateTopicProgress(currentSubtopic.id, {
-                questionsAnswered: (sessionUpdates.questionsAskedInCurrentSubtopic ?? session.questionsAskedInCurrentSubtopic) + 1,
-                totalQuestions: 3, // Assuming 3 questions per subtopic
-                currentQuestionType: sessionUpdates.currentQuestionType ?? session.currentQuestionType
-              });
-              
-              // Update status based on assessment - but delay celebration until after API call
-              switch (assessmentResult.answerQuality) {
-                case 'excellent':
-                case 'good':
-                  updateTopicStatus(currentSubtopic.id, "green");
-                  break;
-                case 'partial':
-                  updateTopicStatus(currentSubtopic.id, "yellow");
-                  break;
-                case 'incorrect':
-                case 'confused':
-                  updateTopicStatus(currentSubtopic.id, "red");
-                  break;
-              }
-            }
+          console.log("[Conversation] Conversational intent detected:", {
+            type: conversationalIntent.type,
+            confidence: conversationalIntent.confidence,
+            shouldReturnToFlow: conversationalIntent.shouldReturnToFlow
+          });
+          
+          // If it's a conversational question (not an assessment response), skip assessment
+          if (conversationalIntent.type !== 'assessment_response' && conversationalIntent.confidence > 0.8) {
+            console.log("[Conversation] Handling as conversational question - skipping assessment");
+            // The LLM will handle this conversationally via the prompt engine
+            // No assessment needed, just continue to LLM call
           } else {
-            console.log("[Conversation] No assessment - conversational response detected");
+            // Normal assessment flow for medical responses
+            assessmentResult = await assessUserResponse(messageContent, session);
+            
+            // Only update session if we got an actual assessment (not null for conversational responses)
+            if (assessmentResult) {
+              sessionUpdates = updateSessionAfterAssessment(session, assessmentResult);
+              
+              console.log("[Conversation] Assessment result:", assessmentResult);
+              
+              // Update knowledge map progress and status based on assessment
+              const currentSubtopic = session.subtopics[session.currentSubtopicIndex];
+              if (currentSubtopic) {
+                // Update progress tracking
+                updateTopicProgress(currentSubtopic.id, {
+                  questionsAnswered: (sessionUpdates.questionsAskedInCurrentSubtopic ?? session.questionsAskedInCurrentSubtopic) + 1,
+                  totalQuestions: 3, // Assuming 3 questions per subtopic
+                  currentQuestionType: sessionUpdates.currentQuestionType ?? session.currentQuestionType
+                });
+                
+                // Update status based on assessment - but delay celebration until after API call
+                switch (assessmentResult.answerQuality) {
+                  case 'excellent':
+                  case 'good':
+                    updateTopicStatus(currentSubtopic.id, "green");
+                    break;
+                  case 'partial':
+                    updateTopicStatus(currentSubtopic.id, "yellow");
+                    break;
+                  case 'incorrect':
+                  case 'confused':
+                    updateTopicStatus(currentSubtopic.id, "red");
+                    break;
+                }
+              }
+            } else {
+              console.log("[Conversation] No assessment - conversational response detected");
+            }
           }
         }
 

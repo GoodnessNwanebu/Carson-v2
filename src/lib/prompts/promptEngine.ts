@@ -3,6 +3,8 @@
 import { CarsonSessionContext } from './carsonTypes';
 import { generateTransition, assessUserPerformance } from './transitionEngine';
 import { shouldTestRetention, generateRetentionQuestion, generateMetacognitiveQuestion, generateSelfAssessmentPrompt } from './assessmentEngine';
+import { detectConversationalIntent, generateConversationalResponse } from './conversational-intelligence';
+
 interface PromptContext extends CarsonSessionContext {
   lastAssessment?: {
     answerQuality: string;
@@ -182,6 +184,21 @@ Be warm, encouraging, and give them clear options: notes OR new topic.
   const responseContext = analyzeResponseContext(safeContext);
   
   console.log(`🔍 [ResponseContext] Type: ${responseContext.type}, Action: ${responseContext.suggestedAction}, Reasoning: ${responseContext.reasoning}`);
+
+  // **NEW**: Conversational Intelligence - Detect if student is asking a question
+  if (safeContext.history.length > 0) {
+    const lastUserMessage = safeContext.history[safeContext.history.length - 1];
+    if (lastUserMessage?.role === 'user') {
+      const conversationalIntent = detectConversationalIntent(lastUserMessage.content, safeContext);
+      
+      console.log(`🤖 [ConversationalAI] Intent: ${conversationalIntent.type}, Confidence: ${conversationalIntent.confidence}`);
+      
+      // If student is asking a clarifying question, handle it conversationally
+      if (conversationalIntent.type !== 'assessment_response' && conversationalIntent.confidence > 0.8) {
+        return generateConversationalPrompt(conversationalIntent, lastUserMessage.content, safeContext);
+      }
+    }
+  }
 
   // **HANDLE DIFFERENT RESPONSE TYPES**
   switch (responseContext.suggestedAction) {
@@ -1249,11 +1266,12 @@ function containsNotesRequest(message: string): boolean {
 }
 
 function containsNewTopicRequest(message: string): boolean {
-  const newTopicKeywords = ['new', 'another', 'different', 'next', 'study', 'learn', 'topic', 'subject'];
-  const lowerMessage = message.toLowerCase();
-  return newTopicKeywords.some(keyword => lowerMessage.includes(keyword)) ||
-         lowerMessage.includes('start over') ||
-         lowerMessage.includes('something else');
+  const newTopicPatterns = [
+    /new topic|different topic|another topic|something else/i,
+    /study something else|learn about something else/i,
+    /move on|next topic|different subject/i
+  ];
+  return newTopicPatterns.some(pattern => pattern.test(message));
 }
 
 function getExpectedConcepts(subtopic: string, topic: string): string[] {
@@ -1568,4 +1586,277 @@ function analyzeResponseContext(context: PromptContext): ResponseContext {
     shouldTriggerGapAnalysis: false,
     suggestedAction: 'continue_conversation'
   };
+}
+
+/**
+ * Generate conversational prompt for student questions
+ */
+function generateConversationalPrompt(
+  intent: any,
+  userMessage: string,
+  context: PromptContext
+): string {
+  const currentSubtopic = context.subtopics[context.currentSubtopicIndex];
+  
+  switch (intent.type) {
+    case 'definition':
+      return generateDefinitionPrompt(userMessage, context.topic, currentSubtopic?.title, intent.interruptedQuestion);
+    
+    case 'mechanism':
+      return generateMechanismPrompt(userMessage, context.topic, currentSubtopic?.title, intent.interruptedQuestion);
+    
+    case 'timeframe':
+      return generateTimeframePrompt(userMessage, context.topic, currentSubtopic?.title, intent.interruptedQuestion);
+    
+    case 'comparison':
+      return generateComparisonPrompt(userMessage, context.topic, currentSubtopic?.title, intent.interruptedQuestion);
+    
+    case 'clarification':
+      return generateClarificationPrompt(userMessage, context, intent.interruptedQuestion);
+    
+    case 'example':
+      return generateExamplePrompt(userMessage, context.topic, currentSubtopic?.title, intent.interruptedQuestion);
+    
+    case 'off_topic':
+      return generateOffTopicPrompt(userMessage, context.topic);
+    
+    case 'uncertain_answer':
+      return generateUncertainAnswerPrompt(userMessage, context);
+    
+    default:
+      return generateDefaultConversationalPrompt(userMessage, context);
+  }
+}
+
+/**
+ * Generate definition prompt
+ */
+function generateDefinitionPrompt(userMessage: string, topic: string, subtopic?: string, interruptedQuestion?: string): string {
+  // Extract the term they're asking about
+  const termMatch = userMessage.match(/what (does|is) (\w+) (mean|stand for)|what('s| is) (\w+)\?|define (\w+)/i);
+  const term = termMatch ? (termMatch[2] || termMatch[5] || termMatch[6]) : 'that term';
+  
+  const resumeInstructions = interruptedQuestion 
+    ? `\n\n**CRITICAL - EXACT QUESTION TO RESUME**: After answering their definition question, you MUST return to this EXACT question word-for-word: "${interruptedQuestion}"\n\nExample format: "Great question! [definition]... Now, back to what I was asking: ${interruptedQuestion}"`
+    : '';
+  
+  return `
+You're Carson, and the student just asked: "${userMessage}"
+
+This is a definition question about ${term} in the context of ${topic}${subtopic ? ` (specifically ${subtopic})` : ''}.
+
+Your response:
+1. Give a clear, contextual definition of ${term}
+2. Make it relevant to what you've been discussing about ${topic}
+3. Keep it conversational - you're clarifying, not lecturing
+4. End naturally - "Does that help?" or "What else would you like to know?"${resumeInstructions}
+
+Stay warm and educational.
+`.trim();
+}
+
+/**
+ * Generate mechanism prompt
+ */
+function generateMechanismPrompt(userMessage: string, topic: string, subtopic?: string, interruptedQuestion?: string): string {
+  const resumeInstructions = interruptedQuestion 
+    ? `\n\n**CRITICAL - EXACT QUESTION TO RESUME**: After explaining the mechanism, you MUST return to this EXACT question word-for-word: "${interruptedQuestion}"\n\nExample format: "Good question about the mechanism! [explanation]... Now, let's get back to: ${interruptedQuestion}"`
+    : '';
+  
+  return `
+You're Carson, and the student just asked: "${userMessage}"
+
+This is a mechanism/process question about ${topic}${subtopic ? ` (specifically ${subtopic})` : ''}.
+
+Your response:
+1. Explain the mechanism step-by-step in simple terms
+2. Connect it to the clinical context of ${topic}
+3. Use analogies if helpful
+4. Keep it conversational and engaging${resumeInstructions}
+
+Be thorough but accessible.
+`.trim();
+}
+
+/**
+ * Generate timeframe prompt
+ */
+function generateTimeframePrompt(userMessage: string, topic: string, subtopic?: string, interruptedQuestion?: string): string {
+  const resumeInstructions = interruptedQuestion 
+    ? `\n\n**CRITICAL - EXACT QUESTION TO RESUME**: After answering about timing, you MUST return to this EXACT question word-for-word: "${interruptedQuestion}"\n\nExample format: "That's an important timing question! [timing info]... Alright, back to our discussion: ${interruptedQuestion}"`
+    : '';
+  
+  return `
+You're Carson, and the student just asked: "${userMessage}"
+
+This is a timing/duration question about ${topic}${subtopic ? ` (specifically ${subtopic})` : ''}.
+
+Your response:
+1. Give specific timeframes with clinical context
+2. Explain why timing matters for this condition/process
+3. Include relevant clinical pearls about timing
+4. Keep it practical and memorable${resumeInstructions}
+
+Make timing clinically relevant.
+`.trim();
+}
+
+/**
+ * Generate comparison prompt
+ */
+function generateComparisonPrompt(userMessage: string, topic: string, subtopic?: string, interruptedQuestion?: string): string {
+  const resumeInstructions = interruptedQuestion 
+    ? `\n\n**CRITICAL - EXACT QUESTION TO RESUME**: After making the comparison, you MUST return to this EXACT question word-for-word: "${interruptedQuestion}"\n\nExample format: "Excellent comparison question! [comparison details]... Okay, now back to what I was asking: ${interruptedQuestion}"`
+    : '';
+  
+  return `
+You're Carson, and the student just asked: "${userMessage}"
+
+This is a comparison question about ${topic}${subtopic ? ` (specifically ${subtopic})` : ''}.
+
+Your response:
+1. Make a clear, structured comparison
+2. Highlight the key differences that matter clinically
+3. Use a table or bullet points if helpful
+4. Connect to practical implications${resumeInstructions}
+
+Make comparisons clinically meaningful.
+`.trim();
+}
+
+/**
+ * Generate clarification prompt
+ */
+function generateClarificationPrompt(userMessage: string, context: PromptContext, interruptedQuestion?: string): string {
+  const lastCarsonMessage = context.history
+    .filter(msg => msg.role === 'assistant')
+    .slice(-1)[0]?.content || '';
+  
+  const currentSubtopic = context.subtopics[context.currentSubtopicIndex];
+  
+  const resumeInstructions = interruptedQuestion 
+    ? `\n\n**CRITICAL - EXACT QUESTION TO RESUME**: After clarifying, you MUST return to this EXACT question word-for-word: "${interruptedQuestion}"\n\nExample format: "Let me clarify that for you! [clarification]... So, going back to my question: ${interruptedQuestion}"`
+    : '';
+  
+  return `
+You're Carson, and the student just asked: "${userMessage}"
+
+This is a clarification request about something you recently said or discussed.
+
+**RECENT CONTEXT**: "${lastCarsonMessage.slice(-200)}..." 
+
+Your response:
+1. Acknowledge their need for clarification warmly
+2. Re-explain the concept more clearly or from a different angle
+3. Use simpler terms or better analogies
+4. Check for understanding${resumeInstructions}
+
+**TOPIC CONTEXT**: ${context.topic}${currentSubtopic ? ` - ${currentSubtopic.title}` : ''}
+
+Be patient and thorough in your clarification.
+`.trim();
+}
+
+/**
+ * Generate example prompt
+ */
+function generateExamplePrompt(userMessage: string, topic: string, subtopic?: string, interruptedQuestion?: string): string {
+  const resumeInstructions = interruptedQuestion 
+    ? `\n\n**CRITICAL - EXACT QUESTION TO RESUME**: After providing the example, you MUST return to this EXACT question word-for-word: "${interruptedQuestion}"\n\nExample format: "Great request for an example! [clinical example]... Now, let's return to: ${interruptedQuestion}"`
+    : '';
+  
+  return `
+You're Carson, and the student just asked: "${userMessage}"
+
+This is a request for an example related to ${topic}${subtopic ? ` (specifically ${subtopic})` : ''}.
+
+Your response:
+1. Provide a concrete, clinical example
+2. Make it realistic and memorable
+3. Connect the example back to the broader concept
+4. Explain why this example illustrates the point well${resumeInstructions}
+
+Make examples vivid and clinically relevant.
+`.trim();
+}
+
+/**
+ * Generate off-topic prompt
+ */
+function generateOffTopicPrompt(userMessage: string, topic: string): string {
+  return `
+You're Carson, and the student just asked: "${userMessage}"
+
+This seems off-topic from our current discussion about ${topic}.
+
+Your response:
+1. Gently acknowledge their question without being dismissive
+2. Redirect back to the medical topic at hand
+3. Keep it brief and friendly
+
+Example: "I'm not sure about [their question], but let's keep our focus on ${topic} - what else would you like to know about this?"
+
+Stay warm but guide them back to learning.
+`.trim();
+}
+
+/**
+ * Generate default conversational prompt
+ */
+function generateDefaultConversationalPrompt(userMessage: string, context: PromptContext): string {
+  return `
+You're Carson, and the student said: "${userMessage}"
+
+I'm not sure exactly what they're asking, so:
+
+Your response:
+1. **Ask for clarification** - "I want to make sure I understand..."
+2. **Be helpful** - "Could you rephrase that?" or "What specifically would you like to know?"
+3. **Stay engaged** - show you want to help them learn
+4. **Keep it brief** - just get clarity on what they need
+
+Don't guess what they meant - just ask them to clarify so you can help properly.
+`.trim();
+}
+
+function generateUncertainAnswerPrompt(userMessage: string, context: PromptContext): string {
+  const currentSubtopic = context.subtopics[context.currentSubtopicIndex];
+  const lastCarsonMessage = context.history
+    .filter(msg => msg.role === 'assistant')
+    .slice(-1)[0]?.content || '';
+  
+  // Extract the uncertain answer (remove question mark)
+  const uncertainAnswer = userMessage.replace('?', '').trim();
+  
+  return `
+You're Carson, and the student just gave an uncertain answer: "${userMessage}"
+
+**CONTEXT**: 
+- You asked: "${lastCarsonMessage}"
+- They responded uncertainly: "${userMessage}"
+- Current topic: ${context.topic}
+- Current subtopic: ${currentSubtopic?.title || 'General discussion'}
+
+**STUDENT PSYCHOLOGY**: This student is showing uncertainty/lack of confidence. They might be:
+- Guessing but not sure
+- Having the right instinct but doubting themselves
+- Feeling intimidated by the complexity
+
+**YOUR RESPONSE APPROACH**:
+1. **Validate first**: "You're on the right track!" or "Good thinking!"
+2. **Acknowledge their answer**: Reference what they said (even if tentative)
+3. **Build confidence**: Explain why their thinking makes sense
+4. **Expand gently**: Add context or ask a follow-up to build on their answer
+5. **Keep encouraging tone**: This is about building confidence, not just correcting
+
+**EXAMPLE STRUCTURE**:
+"You're absolutely right! [Their answer] is indeed [validation]. [Brief explanation of why they're correct]. What makes you think that's particularly challenging/important/relevant?"
+
+**AVOID**:
+- Dismissing their uncertainty
+- Making them feel wrong for being tentative
+- Over-explaining (keep it encouraging, not overwhelming)
+
+Be the attending who builds confidence while teaching.
+`.trim();
 } 
