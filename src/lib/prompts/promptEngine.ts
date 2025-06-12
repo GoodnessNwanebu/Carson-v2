@@ -141,10 +141,11 @@ Your response:
 1. "Absolutely! Let me create some personalized notes for you."
 2. "I'll capture the key points we covered and areas where you really excelled."
 3. "This will take just a moment..."
+4. **IMPORTANT CLOSING**: After confirming the notes, end with: "Happy to make that note for you. You've done really well today, until next time."
 
 **IMPORTANT**: This triggers note generation. After this response, the system will automatically generate and save notes to their journal.
 
-Be encouraging and let them know the notes will appear in their journal tab.
+Be encouraging and let them know the notes will appear in their journal tab, then give the warm closing message.
 `.trim();
     }
     

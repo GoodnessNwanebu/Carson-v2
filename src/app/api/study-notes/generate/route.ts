@@ -79,11 +79,17 @@ export async function POST(req: NextRequest) {
       .insert({
         session_id: session.id,
         content: response.content,
+        custom_title: sessionData.topic,
+        generated_at: new Date().toISOString(),
         note_version: 'v1',
         is_edited: false,
-        edit_count: 0
+        edit_count: 0,
+        study_status: 'to_review'
       })
-      .select()
+      .select(`
+        *,
+        session:sessions(topic, created_at, session_id)
+      `)
 
     if (saveError) {
       console.error("❌ [API/study-notes] Failed to save notes:", saveError)

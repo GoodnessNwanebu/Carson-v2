@@ -30,7 +30,6 @@ function useMobile() {
 
 interface CarsonMainContentProps {
   inConversation: boolean
-  setInConversation: (value: boolean) => void
   query: string
   setQuery: (value: string) => void
   deepDive: boolean
@@ -57,7 +56,6 @@ interface CarsonMainContentProps {
 
 export function CarsonMainContent({
   inConversation,
-  setInConversation,
   query,
   setQuery,
   deepDive,

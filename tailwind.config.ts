@@ -81,11 +81,22 @@ const config: Config = {
   				to: {
   					height: '0'
   				}
+  			},
+  			'slide-down-center': {
+  				from: {
+  					transform: 'translate(-50%, -100%) scale(0.95)',
+  					opacity: '0'
+  				},
+  				to: {
+  					transform: 'translate(-50%, 0) scale(1)',
+  					opacity: '1'
+  				}
   			}
   		},
   		animation: {
   			'accordion-down': 'accordion-down 0.2s ease-out',
-  			'accordion-up': 'accordion-up 0.2s ease-out'
+  			'accordion-up': 'accordion-up 0.2s ease-out',
+  			'slide-down-center': 'slide-down-center 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards'
   		}
   	}
   },

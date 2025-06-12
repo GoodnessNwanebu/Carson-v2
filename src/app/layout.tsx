@@ -7,6 +7,7 @@ import { SidebarProvider } from "@/components/features/sidebar/sidebar-context";
 import { KnowledgeMapProvider } from "@/components/features/knowledge-map/knowledge-map-context";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { AppLayout } from "@/components/app-layout";
+import { NotificationProvider } from "@/components/ui/notification-system";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -24,15 +25,17 @@ export default function RootLayout({
     <html lang="en">
       <body className={inter.className}>
         <ThemeProvider>
-          <SidebarProvider>
-            <KnowledgeMapProvider>
-              <SessionProvider>
-                <ErrorBoundary>
-                  <AppLayout>{children}</AppLayout>
-                </ErrorBoundary>
-              </SessionProvider>
-            </KnowledgeMapProvider>
-          </SidebarProvider>
+          <NotificationProvider>
+            <SidebarProvider>
+              <KnowledgeMapProvider>
+                <SessionProvider>
+                  <ErrorBoundary>
+                    <AppLayout>{children}</AppLayout>
+                  </ErrorBoundary>
+                </SessionProvider>
+              </KnowledgeMapProvider>
+            </SidebarProvider>
+          </NotificationProvider>
         </ThemeProvider>
       </body>
     </html>

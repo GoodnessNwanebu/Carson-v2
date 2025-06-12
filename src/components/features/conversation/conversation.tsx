@@ -156,10 +156,12 @@ export function Conversation({
     setError(null); // Clear any existing errors
 
     try {
+      // **SIMPLIFIED**: Just check if session exists or not
       if (!session) {
+        console.log('🚀 [Conversation] Starting new session - no existing session')
         // First message: start session, call LLM for intro/subtopics
         const newSessionId = uuidv4();
-        startSession(messageContent, newSessionId);
+        await startSession(messageContent, newSessionId);
         setCurrentTopicName(messageContent);
         
         // Show knowledge map loading only for initial subtopic generation
@@ -226,8 +228,14 @@ export function Conversation({
         
         // Stop knowledge map loading after subtopics are generated
         setKnowledgeMapLoading(false);
-      } else {
-                // Ongoing conversation - assess user response and update session
+      } else if (session) {
+        console.log('💬 [Conversation] Continuing existing session:', {
+          sessionId: session.sessionId,
+          historyLength: session.history?.length || 0,
+          hasSubtopics: !!session.subtopics?.length,
+          currentState: session.currentSubtopicState
+        })
+        // Ongoing conversation - assess user response and update session
         const userMessage = { id: uuidv4(), role: "user" as const, content: messageContent };
         
         // Add user message immediately to show in conversation
@@ -248,10 +256,31 @@ export function Conversation({
                 const notes = await completeSessionAndGenerateNotes();
                 if (notes) {
                   console.log('✅ [Conversation] Study notes generated and saved!');
-                  // TODO: Show success notification
+                  
+                  // Show success notification
+                  setError(null); // Clear any existing errors
+                  
+                  // Add a system message to show notes were created
+                  const notesSuccessMessage = { 
+                    id: uuidv4(), 
+                    role: "assistant" as const, 
+                    content: "✅ Perfect! Your study notes have been saved to your journal. You can find them in the Journal tab where you can edit, search, and export them. Happy to make that note for you. You've done really well today, until next time." 
+                  };
+                  addMessage(notesSuccessMessage);
+                  
+                  // Mark session as complete
+                  updateSession({ 
+                    isComplete: true,
+                    currentSubtopicState: 'complete'
+                  });
+                  
+                } else {
+                  console.error('❌ [Conversation] Failed to generate study notes');
+                  setError("Sorry, there was an issue generating your study notes. Please try again.");
                 }
               } catch (error) {
                 console.error('❌ [Conversation] Failed to generate study notes:', error);
+                setError("Sorry, there was an issue generating your study notes. Please try again.");
               }
             }, 2000); // Wait 2 seconds for Carson's response to show first
           }
@@ -430,6 +459,12 @@ export function Conversation({
             });
           }
         }
+      } else {
+        // Edge case: no session and not loading - shouldn't happen, but handle gracefully
+        console.warn('⚠️ [Conversation] No session available and not loading - this should not happen')
+        setError('No active conversation. Please refresh the page and try again.')
+        setIsConversationLoading(false);
+        return;
       }
     } catch (error) {
       console.error("Error in conversation:", error);
@@ -447,6 +482,11 @@ export function Conversation({
   useEffect(() => {
     if (session?.subtopics && session.subtopics.length > 0 && topics.length === 0) {
       // Only sync if knowledge map is empty (initial load)
+      console.log('🗺️ [Conversation] Syncing knowledge map with existing session:', {
+        sessionId: session.sessionId,
+        subtopicsCount: session.subtopics.length,
+        currentIndex: session.currentSubtopicIndex
+      })
       setTopics(
         session.subtopics.map((sub) => ({
           id: sub.id,
@@ -457,6 +497,14 @@ export function Conversation({
         }))
       );
       setCurrentSubtopicIndex(session.currentSubtopicIndex);
+    } else if (session) {
+      console.log('📊 [Conversation] Session state check:', {
+        hasSession: !!session,
+        hasSubtopics: !!session.subtopics,
+        subtopicsLength: session.subtopics?.length || 0,
+        topicsLength: topics.length,
+        sessionId: session.sessionId
+      })
     }
   }, [session?.subtopics, topics.length, setTopics, setCurrentSubtopicIndex]);
 
@@ -581,7 +629,14 @@ export function Conversation({
 
   // Simple function to update conversation input from voice
   const handleVoiceInput = (transcript: string) => {
-    setInput(prevInput => prevInput + (prevInput ? ' ' : '') + transcript);
+    console.log(`[Conversation] Received voice input: "${transcript}"`);
+    console.log(`[Conversation] Current input before: "${input}"`);
+    
+    setInput(prevInput => {
+      const newInput = prevInput + (prevInput ? ' ' : '') + transcript;
+      console.log(`[Conversation] Setting new input: "${newInput}"`);
+      return newInput;
+    });
     
     // Auto-resize textarea after adding voice input with slight delay for DOM update
     if (inputRef?.current) {

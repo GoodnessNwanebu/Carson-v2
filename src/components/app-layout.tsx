@@ -21,7 +21,7 @@ export function AppLayout({ children }: AppLayoutProps) {
   const router = useRouter()
 
   // Determine if current page needs scrollable content
-  const isScrollablePage = pathname.startsWith('/question-solver')
+  const isScrollablePage = pathname.startsWith('/question-solver') || pathname.startsWith('/recents')
 
   // Add viewport meta tag for better mobile behavior
   useEffect(() => {

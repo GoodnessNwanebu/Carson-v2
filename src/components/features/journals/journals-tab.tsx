@@ -77,6 +77,30 @@ export function JournalsTab() {
     loadStudyNotes()
   }, [])
 
+  // Add effect to reload notes when tab becomes visible (for when new notes are created)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        // Tab became visible - refresh notes in case new ones were created
+        loadStudyNotes()
+      }
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    
+    // Also refresh when component mounts or when focus returns
+    const handleFocus = () => {
+      loadStudyNotes()
+    }
+    
+    window.addEventListener('focus', handleFocus)
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      window.removeEventListener('focus', handleFocus)
+    }
+  }, [])
+
   const loadStudyNotes = async () => {
     try {
       setLoading(true)
@@ -739,14 +763,14 @@ ${note.content}
                 </div>
                 <span className={`
                   px-2.5 py-1 text-xs rounded-full font-medium flex-shrink-0 ml-3 border
-                  ${note.status === 'completed' 
+                  ${note.study_status === 'mastered' 
                     ? statusBadges.completed
-                    : note.status === 'in_progress'
+                    : note.study_status === 'reviewing'
                     ? statusBadges.inProgress
                     : statusBadges.pending
                   }
                 `}>
-                  {getStatusLabel(note.status)}
+                  {getStatusLabel(note.study_status || 'to_review')}
                 </span>
               </div>
               <div className={`flex items-center gap-2 text-xs ${textColors.muted}`}>

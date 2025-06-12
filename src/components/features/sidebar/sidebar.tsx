@@ -18,8 +18,19 @@ export function Sidebar({ onNewChat }: SidebarProps) {
   const pathname = usePathname()
 
   const handleNavigation = (path: string) => {
+    // **ENHANCED AUTO-CLOSE**: Better UX with visual feedback
+    const isMobile = window.innerWidth < 768
+    
+    // Navigate immediately
     router.push(path)
-    // Sidebar stays open - user controls when to close it
+    
+    // Auto-close sidebar on mobile with smooth timing
+    if (sidebarOpen && isMobile) {
+      // Brief delay for visual feedback that the tap was registered
+      setTimeout(() => {
+        setSidebarOpen(false)
+      }, 150) // Slightly longer delay for better feel
+    }
   }
 
   return (
@@ -101,8 +112,10 @@ export function Sidebar({ onNewChat }: SidebarProps) {
             <Button
               className={cn(
                 "w-full transition-all duration-200 font-medium px-6 py-4 justify-start gap-3 text-white rounded-xl shadow-lg hover:shadow-xl bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 min-h-[48px]",
+                // **ENHANCED MOBILE FEEDBACK**: Better touch feedback for primary action
+                "active:scale-95 active:shadow-md",
                 // Desktop collapsed: override to icon-only style
-                collapsed && "md:w-10 md:h-10 md:mx-auto md:p-0 md:text-gray-300 md:hover:text-white md:hover:bg-gray-800 md:justify-center md:bg-none md:from-transparent md:to-transparent md:hover:from-transparent md:hover:to-transparent md:shadow-none md:rounded-md"
+                collapsed && "md:w-10 md:h-10 md:mx-auto md:p-0 md:text-gray-300 md:hover:text-white md:hover:bg-gray-800 md:justify-center md:bg-none md:from-transparent md:to-transparent md:hover:from-transparent md:hover:to-transparent md:shadow-none md:rounded-md md:active:scale-100"
               )}
               onClick={() => {
                 onNewChat?.()
@@ -210,7 +223,9 @@ function NavItem({ icon: Icon, label, collapsed, active, onClick }: NavItemProps
       <Button
         variant="ghost"
         className={cn(
-          "text-gray-300 hover:text-white hover:bg-gray-800 dark:hover:bg-gray-800",
+          "text-gray-300 hover:text-white hover:bg-gray-800 dark:hover:bg-gray-800 transition-all duration-200",
+          // **ENHANCED MOBILE FEEDBACK**: Better touch states
+          "active:scale-95 active:bg-gray-700 dark:active:bg-gray-700",
           active && "bg-gray-800 dark:bg-gray-800 text-white",
           // Mobile: always full width, Desktop: collapsed/expanded based on state
           "w-full justify-start gap-3 py-3 px-3 text-base",

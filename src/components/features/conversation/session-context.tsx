@@ -6,7 +6,7 @@ import { v4 as uuidv4 } from 'uuid';
 
 interface SessionContextType {
   session: CarsonSessionContext | null
-  startSession: (topic: string, sessionId?: string) => void
+  startSession: (topic: string, sessionId?: string) => Promise<void>
   addMessage: (message: Message) => void
   updateSession: (updates: Partial<CarsonSessionContext>) => void
   moveToNextSubtopic: () => boolean
@@ -14,7 +14,7 @@ interface SessionContextType {
   checkSubtopicCompletion: (subtopicIndex: number) => boolean
   isSessionComplete: () => boolean
   clearSession: () => void
-  resetSession: () => void
+  resetSession: () => Promise<void>
   completeSessionAndGenerateNotes: () => Promise<any>
 }
 
@@ -102,7 +102,43 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  const startSession = (topic: string, sessionId?: string) => {
+  const startSession = async (topic: string, sessionId?: string) => {
+    // If sessionId is provided, try to load existing session from database
+    if (sessionId) {
+      try {
+        console.log('🔄 [SessionProvider] Loading existing session:', sessionId)
+        const response = await fetch(`/api/sessions/load?sessionId=${sessionId}`)
+        
+        if (response.ok) {
+          const { session: existingSession } = await response.json()
+          console.log('📡 [SessionProvider] API response:', existingSession)
+          
+          if (existingSession && existingSession.session_data) {
+            console.log('✅ [SessionProvider] Loaded existing session from database')
+            console.log('📋 [SessionProvider] Session data:', {
+              sessionId: existingSession.session_data.sessionId,
+              topic: existingSession.session_data.topic,
+              historyLength: existingSession.session_data.history?.length || 0,
+              subtopicsCount: existingSession.session_data.subtopics?.length || 0,
+              isComplete: existingSession.session_data.isComplete
+            })
+            setSession(existingSession.session_data)
+            return
+          } else {
+            console.warn('⚠️ [SessionProvider] Session data structure invalid:', existingSession)
+          }
+        } else {
+          console.warn('⚠️ [SessionProvider] API request failed:', response.status, response.statusText)
+        }
+        
+        console.warn('⚠️ [SessionProvider] Could not load existing session, creating new one')
+      } catch (error) {
+        console.error('❌ [SessionProvider] Error loading session:', error)
+      }
+    }
+
+    // Create new session (either no sessionId provided or loading failed)
+    console.log('🆕 [SessionProvider] Creating new session')
     setSession({
       sessionId: sessionId || uuidv4(),
       topic,
@@ -345,9 +381,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem('carsonSession')
   }
 
-  const resetSession = () => {
+  const resetSession = async () => {
+    const topicToReset = session?.topic || ''
+    const sessionIdToReset = session?.sessionId
     clearSession()
-    startSession(session?.topic || '', session?.sessionId)
+    await startSession(topicToReset, sessionIdToReset)
   }
 
   return (
