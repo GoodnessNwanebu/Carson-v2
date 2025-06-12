@@ -77,9 +77,10 @@ function CarsonUIContent() {
   const [contentWidth, setContentWidth] = useState("max-w-2xl")
   const { success: notifySuccess, error: notifyError, warning: notifyWarning, info: notifyInfo } = useNotificationHelpers()
 
-  // **CRITICAL FIX**: Derive inConversation state from session context
-  // If there's an active session with history, we should be in conversation mode
-  const inConversation = !!(session && session.history && session.history.length > 0)
+  // **CLEAN SEPARATION**: Handle new vs existing conversations separately
+  const hasExistingConversation = !!(session && session.history && session.history.length > 0)
+  const isStartingNewConversation = !session && !!initialTopic
+  const inConversation = hasExistingConversation || isStartingNewConversation
   
   console.log('🎯 [CarsonUI] Conversation state:', {
     hasSession: !!session,
@@ -145,17 +146,24 @@ function CarsonUIContent() {
     e.preventDefault()
     if (!query.trim() || isLoading) return
 
+    const submittedQuery = query // Capture immediately to prevent race conditions
     setIsLoading(true)
+    
+    // Start transition after brief loading indication
     setTimeout(() => {
       setIsTransitioning(true)
-    }, 300)
+    }, 200)
+    
+    // Set topic and end loading during transition
     setTimeout(() => {
       setIsLoading(false)
-      setInitialTopic(query)
-    }, 1000)
+      setInitialTopic(submittedQuery)
+    }, 400)
+    
+    // End transition after content has loaded
     setTimeout(() => {
       setIsTransitioning(false)
-    }, 1200)
+    }, 800) // More balanced timing
   }
 
   // Reset to home screen (new chat) - user controls sidebar manually

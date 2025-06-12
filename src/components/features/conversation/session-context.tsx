@@ -6,7 +6,7 @@ import { v4 as uuidv4 } from 'uuid';
 
 interface SessionContextType {
   session: CarsonSessionContext | null
-  startSession: (topic: string, sessionId?: string) => Promise<void>
+  startSession: (topic: string, sessionId?: string, loadExisting?: boolean) => Promise<void>
   addMessage: (message: Message) => void
   updateSession: (updates: Partial<CarsonSessionContext>) => void
   moveToNextSubtopic: () => boolean
@@ -102,9 +102,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  const startSession = async (topic: string, sessionId?: string) => {
-    // If sessionId is provided, try to load existing session from database
-    if (sessionId) {
+  const startSession = async (topic: string, sessionId?: string, loadExisting: boolean = true) => {
+    // If sessionId is provided AND we want to load existing, try to load from database
+    if (sessionId && loadExisting) {
       try {
         console.log('🔄 [SessionProvider] Loading existing session:', sessionId)
         const response = await fetch(`/api/sessions/load?sessionId=${sessionId}`)
@@ -137,7 +137,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       }
     }
 
-    // Create new session (either no sessionId provided or loading failed)
+    // Create new session (either no sessionId provided, loadExisting=false, or loading failed)
     console.log('🆕 [SessionProvider] Creating new session')
     setSession({
       sessionId: sessionId || uuidv4(),

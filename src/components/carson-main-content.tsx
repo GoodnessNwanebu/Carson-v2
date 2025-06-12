@@ -127,8 +127,8 @@ export function CarsonMainContent({
 
   return (
     <div className={cn(
-      "flex-1 flex flex-col transition-all duration-700 ease-in-out h-full",
-      isTransitioning && "opacity-20 scale-98 blur-sm",
+      "flex-1 flex flex-col transition-all duration-300 ease-in-out h-full transform-gpu",
+      isTransitioning && "opacity-15 scale-[0.99] blur-[2px] will-change-transform",
     )}>
       {inConversation ? (
         // Conversation mode

@@ -161,7 +161,7 @@ export function Conversation({
         console.log('🚀 [Conversation] Starting new session - no existing session')
         // First message: start session, call LLM for intro/subtopics
         const newSessionId = uuidv4();
-        await startSession(messageContent, newSessionId);
+        await startSession(messageContent, newSessionId, false); // false = don't try to load from DB
         setCurrentTopicName(messageContent);
         
         // Show knowledge map loading only for initial subtopic generation
@@ -533,7 +533,10 @@ export function Conversation({
       setInitialTopicSubmitted(true);
       console.log("[Conversation] Submitting initial topic:", initialTopic);
       submitMessage(initialTopic);
-      if (onInitialTopicUsed) onInitialTopicUsed();
+      // Clear initial topic after transition completes
+      if (onInitialTopicUsed) {
+        setTimeout(() => onInitialTopicUsed(), 200);
+      }
     }
     // eslint-disable-next-line
   }, [initialTopic, isConversationLoading, session, initialTopicSubmitted]);
@@ -759,6 +762,7 @@ export function Conversation({
             <div className="flex justify-start">
               <div className="bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 rounded-xl sm:rounded-2xl rounded-bl-md px-4 md:px-6 py-3 md:py-4 shadow-sm border border-gray-200 dark:border-gray-700">
                 <div className="flex space-x-2 items-center h-6">
+
                   <div
                     className="w-2 h-2 rounded-full bg-blue-400 dark:bg-blue-500 animate-bounce"
                     style={{ animationDelay: "0ms" }}
