@@ -15,7 +15,11 @@ export async function callLLM(context: CarsonSessionContext): Promise<{ content:
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
     
-    const response = await fetch("/api/llm", {
+    // Fix: Use absolute URL for server-side calls
+    const baseUrl = process.env.NEXTAUTH_URL || process.env.VERCEL_URL || 'http://localhost:3000';
+    const apiUrl = `${baseUrl}/api/llm`;
+    
+    const response = await fetch(apiUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

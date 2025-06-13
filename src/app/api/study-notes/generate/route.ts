@@ -42,15 +42,19 @@ export async function POST(req: NextRequest) {
     // 2. Check if notes already exist
     const { data: existingNotes } = await supabaseAdmin
       .from('study_notes')
-      .select('id')
+      .select(`
+        *,
+        session:sessions(topic, created_at, session_id)
+      `)
       .eq('session_id', session.id)
 
     if (existingNotes && existingNotes.length > 0) {
-      console.log("ℹ️ [API/study-notes] Notes already exist for this session")
-      return NextResponse.json(
-        { error: "Study notes already generated for this session" },
-        { status: 409 }
-      )
+      console.log("ℹ️ [API/study-notes] Notes already exist for this session, returning existing note")
+      return NextResponse.json({ 
+        success: true, 
+        notes: existingNotes[0],
+        message: "Study notes already exist for this session"
+      })
     }
 
     // 3. Generate study notes with LLM
@@ -79,12 +83,7 @@ export async function POST(req: NextRequest) {
       .insert({
         session_id: session.id,
         content: response.content,
-        custom_title: sessionData.topic,
-        generated_at: new Date().toISOString(),
-        note_version: 'v1',
-        is_edited: false,
-        edit_count: 0,
-        study_status: 'to_review'
+        generated_at: new Date().toISOString()
       })
       .select(`
         *,

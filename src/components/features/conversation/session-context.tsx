@@ -300,10 +300,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         throw new Error(errorData.error || 'Failed to generate study notes')
       }
 
-      const { notes } = await response.json()
-      console.log('✅ [SessionProvider] Study notes generated successfully')
-      
-      return notes
+      const data = await response.json()
+      if (data.success && data.notes) {
+        console.log('✅ [SessionProvider] Study notes generated successfully')
+        return data.notes
+      } else {
+        throw new Error(data.error || 'Failed to generate study notes')
+      }
     } catch (error) {
       console.error('❌ [SessionProvider] Failed to generate study notes:', error)
       return null

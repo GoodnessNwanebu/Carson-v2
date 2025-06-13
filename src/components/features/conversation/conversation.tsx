@@ -248,32 +248,32 @@ export function Conversation({
           // Check if student wants notes
           if (lowerMessage.includes('note') || lowerMessage.includes('journal') || lowerMessage.includes('save') || 
               lowerMessage.includes('yes') || lowerMessage.includes('sure')) {
-            
-            // Generate study notes after Carson responds
+            // 1. Immediately send an encouraging message about note saving
+            const savingNoteMessage = {
+              id: uuidv4(),
+              role: "assistant" as const,
+              content: `Great! You'll have a note of this session saved to your journals shortly. Congrats again on reviewing ${currentTopicName} successfully. I wish you the best!`
+            };
+            addMessage(savingNoteMessage);
+
+            // 2. Generate study notes after Carson responds
             setTimeout(async () => {
               try {
                 console.log('📝 [Conversation] Generating study notes after user choice...');
                 const notes = await completeSessionAndGenerateNotes();
                 if (notes) {
                   console.log('✅ [Conversation] Study notes generated and saved!');
-                  
-                  // Show success notification
                   setError(null); // Clear any existing errors
-                  
-                  // Add a system message to show notes were created
                   const notesSuccessMessage = { 
                     id: uuidv4(), 
                     role: "assistant" as const, 
                     content: "✅ Perfect! Your study notes have been saved to your journal. You can find them in the Journal tab where you can edit, search, and export them. Happy to make that note for you. You've done really well today, until next time." 
                   };
                   addMessage(notesSuccessMessage);
-                  
-                  // Mark session as complete
                   updateSession({ 
                     isComplete: true,
                     currentSubtopicState: 'complete'
                   });
-                  
                 } else {
                   console.error('❌ [Conversation] Failed to generate study notes');
                   setError("Sorry, there was an issue generating your study notes. Please try again.");
@@ -283,6 +283,21 @@ export function Conversation({
                 setError("Sorry, there was an issue generating your study notes. Please try again.");
               }
             }, 2000); // Wait 2 seconds for Carson's response to show first
+          } else if (
+            lowerMessage.includes('new topic') ||
+            lowerMessage.includes('another topic') ||
+            lowerMessage.includes('start over') ||
+            lowerMessage.includes('fresh') ||
+            lowerMessage.includes('new conversation')
+          ) {
+            // Explicit, friendly response for starting a new topic
+            const newTopicMessage = {
+              id: uuidv4(),
+              role: "assistant" as const,
+              content: `Cool, start a new topic by clicking the 'New conversation' button in the sidebar. Looking forward to learning something new with you!`
+            };
+            addMessage(newTopicMessage);
+            // Optionally, update session state if needed (not marking complete here)
           }
           
           // Continue with normal LLM call to let Carson respond appropriately
@@ -676,6 +691,32 @@ export function Conversation({
     };
   }, []);
 
+  // Add this above the return statement of the Conversation component
+  const handleRetryNoteGeneration = async () => {
+    setError(null);
+    // Optionally, add a loading message or state here
+    try {
+      const notes = await completeSessionAndGenerateNotes();
+      if (notes) {
+        const notesSuccessMessage = {
+          id: uuidv4(),
+          role: "assistant" as const,
+          content: "✅ Perfect! Your study notes have been saved to your journal. You can find them in the Journal tab where you can edit, search, and export them. Happy to make that note for you. You've done really well today, until next time."
+        };
+        addMessage(notesSuccessMessage);
+        updateSession({ 
+          isComplete: true,
+          currentSubtopicState: 'complete'
+        });
+      } else {
+        setError("Sorry, there was still an issue generating your study notes. Please try again later.");
+      }
+    } catch (error) {
+      console.error('❌ [Conversation] Retry note generation failed:', error);
+      setError("Sorry, there was still an issue generating your study notes. Please try again later.");
+    }
+  };
+
   return (
     <ScrollContext.Provider value={{ isScrolled, showStickyHeader }}>
       <div className="flex flex-col h-full bg-white dark:bg-gray-900" style={{ minHeight: 0 }}>
@@ -780,7 +821,8 @@ export function Conversation({
             </div>
           )}
           
-          {error && (
+          {/* Only show the generic error block if it's not a study notes error */}
+          {error && !error.includes('study notes') && (
             <div className="flex justify-center">
               <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl sm:rounded-2xl px-4 md:px-6 py-4 md:py-5 max-w-md shadow-sm">
                 <div className="flex items-start space-x-3">
@@ -797,6 +839,16 @@ export function Conversation({
                   </div>
                 </div>
               </div>
+            </div>
+          )}
+          {/* Show retry button for study notes error only */}
+          {error && error.includes('study notes') && (
+            <div className="flex items-center gap-2 my-2">
+              <AlertCircle className="text-red-500" size={20} />
+              <span className="text-red-600">{error}</span>
+              <Button size="sm" variant="outline" onClick={handleRetryNoteGeneration} className="ml-2 flex items-center gap-1">
+                <RefreshCw size={16} className="mr-1" /> Retry saving note
+              </Button>
             </div>
           )}
           
