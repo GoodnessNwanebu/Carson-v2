@@ -15,9 +15,11 @@ export async function callLLM(context: CarsonSessionContext): Promise<{ content:
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
     
-    // Fix: Use absolute URL for server-side calls
-    const baseUrl = process.env.NEXTAUTH_URL || process.env.VERCEL_URL || 'http://localhost:3000';
-    const apiUrl = `${baseUrl}/api/llm`;
+    // Best fix: Use relative URL - works in all environments
+    // Since this is a Next.js app, the API routes are served from the same domain
+    const apiUrl = '/api/llm';
+    
+    console.log("[callLLM] Using API URL:", apiUrl);
     
     const response = await fetch(apiUrl, {
       method: "POST",
