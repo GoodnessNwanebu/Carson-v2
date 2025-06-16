@@ -8,6 +8,7 @@ import { useKnowledgeMap } from "./features/knowledge-map/knowledge-map-context"
 import { useSession } from "./features/conversation/session-context"
 import { cn } from "@/lib/utils"
 import { usePathname, useRouter } from "next/navigation"
+import { useNewChat } from "./carson-ui"
 
 interface AppLayoutProps {
   children: ReactNode
@@ -19,6 +20,19 @@ export function AppLayout({ children }: AppLayoutProps) {
   const { clearSession } = useSession()
   const pathname = usePathname()
   const router = useRouter()
+  
+  // Get handleNewChat from context (with fallback for pages that don't provide it)
+  let handleNewChat: (() => void) | undefined
+  try {
+    const newChatContext = useNewChat()
+    handleNewChat = newChatContext.handleNewChat
+  } catch (error) {
+    // Fallback for pages that don't have NewChatProvider
+    handleNewChat = () => {
+      clearSession()
+      clearKnowledgeMap()
+    }
+  }
 
   // Determine if current page needs scrollable content
   const isScrollablePage = pathname.startsWith('/question-solver') || pathname.startsWith('/recents')
@@ -102,13 +116,6 @@ export function AppLayout({ children }: AppLayoutProps) {
     // For normal navigation, the session flag already exists
     // so we don't clear anything
   }, [pathname, clearSession, clearKnowledgeMap])
-
-  // Handle new chat (reset to home) - user controls sidebar manually
-  const handleNewChat = () => {
-    // Clear session and knowledge map data
-    clearSession()
-    clearKnowledgeMap()
-  }
 
   // Determine if we should show knowledge map (only on main conversation page)
   const shouldShowKnowledgeMap = pathname === "/"

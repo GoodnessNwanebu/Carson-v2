@@ -6,7 +6,7 @@ import { useState, useRef, useEffect } from "react"
 import { useKnowledgeMap } from "../knowledge-map/knowledge-map-context"
 import { useSession } from "./session-context"
 import { cn } from "@/lib/utils"
-import { Plus, Paperclip, ArrowUp, AlertCircle, RefreshCw, Camera, FileText, Image, Menu, Route, Mic, MicOff } from "lucide-react"
+import { Plus, Paperclip, ArrowUp, AlertCircle, RefreshCw, Camera, FileText, Image, Menu, Route, Mic, MicOff, Copy, Edit3, X } from "lucide-react"
 import { useSidebarState } from "../sidebar/sidebar-context"
 import { callLLM } from "@/lib/prompts/llm-service"
 import { CarsonSessionContext } from "@/lib/prompts/carsonTypes"
@@ -15,6 +15,7 @@ import { assessUserResponseV2Parallel as assessUserResponse, AssessmentResult, R
 import { detectConversationalIntent } from "@/lib/prompts/conversational-intelligence";
 import { CompletionCelebration } from "../knowledge-map/knowledge-map-animations";
 import { Button } from "@/components/ui/button"
+import { useNotificationHelpers } from "@/components/ui/notification-system"
 
 // Create a context for scroll state sharing
 import { createContext, useContext } from "react"
@@ -105,12 +106,14 @@ export function Conversation({
   onVoiceTranscript?: React.MutableRefObject<((transcript: string) => void) | null>
 }) {
   console.log("[Conversation] Component rendered");
+  const { session, addMessage, updateSession, clearSession, startSession, moveToNextSubtopic, checkSubtopicCompletion, isSessionComplete, completeSessionAndGenerateNotes } = useSession()
+  const { setSidebarOpen } = useSidebarState()
+  const { success: showSuccessNotification, error: showErrorNotification } = useNotificationHelpers()
+  
   const [input, setInput] = useState("")
   const { updateTopicStatus, updateTopicProgress, setTopics, setCurrentTopicName, setIsLoading: setKnowledgeMapLoading, setCurrentSubtopicIndex, topics, currentTopicName } = useKnowledgeMap()
-  const { session, startSession, addMessage, updateSession, moveToNextSubtopic, checkSubtopicCompletion, isSessionComplete, completeSessionAndGenerateNotes } = useSession()
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
-  const { setSidebarOpen } = useSidebarState()
   const { isMapOpen, toggleMap } = useKnowledgeMap()
   const [isScrolled, setIsScrolled] = useState(false)
   const [initialTopicSubmitted, setInitialTopicSubmitted] = useState(false);
@@ -120,6 +123,11 @@ export function Conversation({
   const [error, setError] = useState<string | null>(null);
   const [isConversationLoading, setIsConversationLoading] = useState(false); // Separate loading state for conversation
   const [showStickyHeader, setShowStickyHeader] = useState(false); // Explicit control for sticky header
+  const [hoveredMessageId, setHoveredMessageId] = useState<string | null>(null);
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [longPressedMessageId, setLongPressedMessageId] = useState<string | null>(null);
+  const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const hoverTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Attachment modal state
   const [showAttachmentModal, setShowAttachmentModal] = useState(false);
@@ -595,6 +603,20 @@ export function Conversation({
   // Update handleSubmit to use submitMessage
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    
+    if (editingMessageId && session) {
+      // Handle editing: truncate conversation and resubmit
+      const messageIndex = session.history.findIndex(msg => msg.id === editingMessageId)
+      if (messageIndex !== -1) {
+        // Remove all messages after the edited message
+        const newHistory = session.history.slice(0, messageIndex)
+        updateSession({ history: newHistory })
+        
+        // Clear editing state
+        setEditingMessageId(null)
+      }
+    }
+    
     submitMessage(input);
   };
 
@@ -693,11 +715,10 @@ export function Conversation({
 
   // Add this above the return statement of the Conversation component
   const handleRetryNoteGeneration = async () => {
-    setError(null);
-    // Optionally, add a loading message or state here
     try {
-      const notes = await completeSessionAndGenerateNotes();
-      if (notes) {
+      setError(null);
+      const result = await completeSessionAndGenerateNotes();
+      if (result && result.success) {
         const notesSuccessMessage = {
           id: uuidv4(),
           role: "assistant" as const,
@@ -716,6 +737,187 @@ export function Conversation({
       setError("Sorry, there was still an issue generating your study notes. Please try again later.");
     }
   };
+
+  // Copy message content to clipboard
+  const handleCopyMessage = async (content: string) => {
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(content)
+      } else {
+        // Fallback for older browsers
+        const textArea = document.createElement('textarea')
+        textArea.value = content
+        document.body.appendChild(textArea)
+        textArea.focus()
+        textArea.select()
+        document.execCommand('copy')
+        document.body.removeChild(textArea)
+      }
+      showSuccessNotification('Copied to clipboard!')
+    } catch (error) {
+      console.error('Copy failed:', error)
+      showErrorNotification('Copy failed. Please try again.')
+    }
+  }
+
+
+
+  // Calculate text similarity to determine if change is significant (15% threshold)
+  const calculateTextSimilarity = (original: string, edited: string): number => {
+    if (original === edited) return 1
+    if (!original || !edited) return 0
+    
+    // Simple word-based comparison
+    const originalWords = original.toLowerCase().trim().split(/\s+/)
+    const editedWords = edited.toLowerCase().trim().split(/\s+/)
+    
+    const maxLength = Math.max(originalWords.length, editedWords.length)
+    if (maxLength === 0) return 1
+    
+    // Count matching words (simple approach)
+    let matches = 0
+    const minLength = Math.min(originalWords.length, editedWords.length)
+    
+    for (let i = 0; i < minLength; i++) {
+      if (originalWords[i] === editedWords[i]) {
+        matches++
+      }
+    }
+    
+    return matches / maxLength
+  }
+
+  // Simple edit - just put text back in input area
+  const handleStartEdit = (messageId: string, content: string) => {
+    // Set the message content in the input field
+    setInput(content)
+    
+    // Store which message we're editing
+    setEditingMessageId(messageId)
+    
+    // Focus the input
+    setTimeout(() => {
+      inputRef?.current?.focus()
+    }, 100)
+  }
+
+  // Cancel editing
+  const handleCancelEdit = () => {
+    setEditingMessageId(null)
+    setInput("")
+  }
+
+  // Check if message is the special completion message
+  const isCompletionMessage = (message: any): boolean => {
+    if (message.role !== 'assistant') return false
+    const content = typeof message.content === 'string' ? message.content : ''
+    
+    // Check for completion message patterns
+    return content.includes('Create study notes') || 
+           content.includes('Start new topic') ||
+           content.includes('Perfect! Your study notes have been saved') ||
+           content.includes("You've done really well today")
+  }
+
+  // Long press handlers for mobile
+  const handleLongPressStart = (messageId: string, e: React.TouchEvent) => {
+    // Only handle single touch
+    if (e.touches.length !== 1) {
+      return;
+    }
+    
+    // Clear any existing timer
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+    }
+    
+    // Start long press timer (500ms)
+    longPressTimerRef.current = setTimeout(() => {
+      setLongPressedMessageId(messageId);
+      // Add haptic feedback if available
+      if (navigator.vibrate) {
+        navigator.vibrate(50);
+      }
+    }, 500);
+  };
+
+  const handleLongPressEnd = () => {
+    // Clear the timer if touch ends before long press completes
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
+
+  const handleLongPressCancel = () => {
+    // Clear timer and reset state if touch is cancelled
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
+
+  // Hover delay handlers for desktop
+  const handleHoverStart = (messageId: string) => {
+    // Clear any existing hover timer
+    if (hoverTimerRef.current) {
+      clearTimeout(hoverTimerRef.current);
+    }
+    
+    // Start hover delay timer (600ms)
+    hoverTimerRef.current = setTimeout(() => {
+      setHoveredMessageId(messageId);
+    }, 600);
+  };
+
+  const handleHoverEnd = () => {
+    // Clear the timer and immediately hide buttons
+    if (hoverTimerRef.current) {
+      clearTimeout(hoverTimerRef.current);
+      hoverTimerRef.current = null;
+    }
+    setHoveredMessageId(null);
+  };
+
+  // Listen for Escape key to cancel editing
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && editingMessageId) {
+        handleCancelEdit()
+      }
+    }
+    document.addEventListener('keydown', handleEscape)
+    return () => document.removeEventListener('keydown', handleEscape)
+  }, [editingMessageId])
+
+  // Handle document clicks to hide long press buttons
+  useEffect(() => {
+    const handleDocumentClick = (e: MouseEvent | TouchEvent) => {
+      // Check if click/touch is outside message bubbles and action buttons
+      const target = e.target as Element;
+      if (!target.closest('[data-message-bubble]') && !target.closest('button[title*="message"]')) {
+        setLongPressedMessageId(null);
+      }
+    };
+
+    // Only use click for desktop, touchend for mobile to avoid conflicts
+    document.addEventListener('click', handleDocumentClick);
+    return () => {
+      document.removeEventListener('click', handleDocumentClick);
+    };
+  }, []);
+
+  // Cleanup long press timer on unmount
+  useEffect(() => {
+    return () => {
+      if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current);
+      }
+      if (hoverTimerRef.current) {
+        clearTimeout(hoverTimerRef.current);
+      }
+    };
+  }, []);
 
   return (
     <ScrollContext.Provider value={{ isScrolled, showStickyHeader }}>
@@ -772,30 +974,107 @@ export function Conversation({
         style={{ 
           WebkitOverflowScrolling: 'touch',
           overscrollBehavior: 'contain',
-          touchAction: 'pan-y pinch-zoom',
+          touchAction: 'pan-y',
           minHeight: 0
         }}
       >
-        <div className="max-w-4xl mx-auto space-y-4 md:space-y-6">
+        <div className="max-w-4xl mx-auto space-y-2 md:space-y-3">
           {(session?.history ?? []).map((message) => (
             <div
               key={message.id}
-              className={cn("flex", message.role === "assistant" ? "justify-start" : "justify-end")}
+              className={cn("group", message.role === "assistant" ? "flex justify-start" : "flex justify-end")}
+              onMouseEnter={() => handleHoverStart(message.id)}
+              onMouseLeave={handleHoverEnd}
             >
-              <div
-                className={cn(
-                  "px-4 md:px-6 py-3 md:py-4 break-words",
-                  message.role === "assistant"
-                    ? "bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 max-w-full md:max-w-3xl border border-gray-200 dark:border-gray-700 rounded-xl sm:rounded-2xl rounded-bl-md shadow-sm"
-                    : "bg-blue-600 dark:bg-blue-600 text-white max-w-[75%] sm:max-w-[70%] md:max-w-[65%] rounded-3xl rounded-br-lg"
-                )}
-              >
-                <div className="text-sm md:text-base leading-relaxed whitespace-pre-line overflow-wrap-anywhere">
-                  {typeof message.content === 'string' ? 
-                    processMarkdown(message.content)
-                    : JSON.stringify(message.content)
-                  }
+              <div className={cn("flex flex-col", message.role === "assistant" ? "items-start" : "items-end")}>
+                {/* Message Bubble */}
+                <div
+                  data-message-bubble
+                  className={cn(
+                    "px-4 md:px-6 py-3 md:py-4 break-words relative",
+                    message.role === "assistant"
+                      ? "bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 max-w-full md:max-w-3xl border border-gray-200 dark:border-gray-700 rounded-xl sm:rounded-2xl rounded-bl-md shadow-sm"
+                      : "bg-blue-600 dark:bg-blue-600 text-white max-w-full md:max-w-3xl rounded-2xl rounded-br-md shadow-sm"
+                  )}
+                  onTouchStart={(e) => {
+                    // Only handle if it's a single touch and not a scroll gesture
+                    if (e.touches.length === 1) {
+                      handleLongPressStart(message.id, e);
+                    }
+                  }}
+                  onTouchEnd={(e) => {
+                    handleLongPressEnd();
+                  }}
+                  onTouchCancel={(e) => {
+                    handleLongPressCancel();
+                  }}
+                  onTouchMove={(e) => {
+                    // Cancel long press immediately if user moves finger (scrolling)
+                    if (longPressTimerRef.current) {
+                      clearTimeout(longPressTimerRef.current);
+                      longPressTimerRef.current = null;
+                    }
+                  }}
+                  style={{ touchAction: 'pan-y' }}
+                  onContextMenu={(e) => {
+                    // Prevent default context menu on long press
+                    e.preventDefault();
+                  }}
+                >
+                  <div className="text-sm md:text-base leading-relaxed whitespace-pre-line overflow-wrap-anywhere">
+                    {typeof message.content === 'string' ? 
+                      processMarkdown(message.content)
+                      : JSON.stringify(message.content)
+                    }
+                  </div>
+
+
                 </div>
+
+                {/* Under-Bubble Action Buttons */}
+                {!isCompletionMessage(message) && editingMessageId !== message.id && (
+                  <div
+                    className={cn(
+                      "flex items-center gap-2 transition-all duration-200",
+                      // Dynamic margin - more space when visible, minimal when hidden
+                      longPressedMessageId === message.id || hoveredMessageId === message.id 
+                        ? "mt-2 mb-1" 
+                        : "mt-0.5 mb-0",
+                      // Desktop: hover to show (with delay), Mobile: long press to show
+                      "md:opacity-0 md:group-hover:opacity-100",
+                      // Mobile visibility logic
+                      longPressedMessageId === message.id ? "opacity-100" : "opacity-0 md:opacity-0",
+                      // Desktop hover override
+                      hoveredMessageId === message.id ? "md:opacity-100" : ""
+                    )}
+                  >
+                    {/* Copy button - show for all messages except completion messages */}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleCopyMessage(typeof message.content === 'string' ? message.content : JSON.stringify(message.content));
+                      }}
+                      className="p-2 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors touch-manipulation"
+                      title="Copy message"
+                    >
+                      <Copy size={16} />
+                    </button>
+
+                    {/* Edit button - show only for user messages */}
+                    {message.role === "user" && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleStartEdit(message.id, typeof message.content === 'string' ? message.content : JSON.stringify(message.content));
+                        }}
+                        className="p-2 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors touch-manipulation"
+                        title="Edit message"
+                      >
+                        <Edit3 size={16} />
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           ))}
@@ -858,6 +1137,28 @@ export function Conversation({
 
       {/* Responsive input form - improved mobile behavior */}
       <div className="border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 p-4 md:p-6">
+
+
+        {/* Editing indicator */}
+        {editingMessageId && (
+          <div className="max-w-4xl mx-auto mb-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+                <Edit3 size={16} />
+                <span>Editing message</span>
+              </div>
+              <button 
+                onClick={handleCancelEdit}
+                className="p-1 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors"
+                title="Cancel editing"
+              >
+                <X size={18} />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Input form */}
         <form onSubmit={handleSubmit} className="max-w-4xl mx-auto">
           <div
             className="relative flex items-center bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl md:rounded-2xl shadow-sm hover:border-gray-300 dark:hover:border-gray-600 focus-within:border-blue-400 dark:focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-200 dark:focus-within:ring-blue-800 transition-all duration-200"

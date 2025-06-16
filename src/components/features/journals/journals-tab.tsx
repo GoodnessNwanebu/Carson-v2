@@ -792,25 +792,118 @@ ${note.content}
             {/* Header */}
             <div className={`
               ${backgroundColors.card} ${borderColors.primary}
-              border-b ${responsiveUtils.spacing.md}
+              border-b
             `}>
-              <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-4">
-                {/* Mobile Header - Add left padding to avoid hamburger menu overlap */}
-                <div className="min-w-0 flex-1 pl-12 lg:pl-0">
+              {/* Mobile: Stacked layout with proper spacing */}
+              <div className="lg:hidden">
+                {/* Title Section - Full width with breathing room and hamburger menu spacing */}
+                <div className="pl-16 pr-4 pt-6 pb-4">
                   {isEditing ? (
                     <input
                       type="text"
                       value={editedTitle}
                       onChange={(e) => setEditedTitle(e.target.value)}
                       className={`
-                        text-lg lg:text-xl xl:text-2xl font-bold leading-tight bg-transparent border-none outline-none
+                        text-xl font-bold leading-tight bg-transparent border-none outline-none
                         text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500
                         w-full focus:ring-2 focus:ring-blue-500 rounded px-2 py-1 -mx-2
                       `}
                       placeholder="Enter note title..."
                     />
                   ) : (
-                    <h1 className="text-lg lg:text-xl xl:text-2xl font-bold leading-tight text-gray-900 dark:text-white">
+                    <h1 className="text-xl font-bold leading-tight text-gray-900 dark:text-white">
+                      {selectedNote.custom_title || selectedNote.session?.topic || 'Study Notes'}
+                    </h1>
+                  )}
+                </div>
+                
+                {/* Action Buttons - Full width with proper spacing */}
+                <div className="px-4 pb-4">
+                  <div className="flex items-center gap-3">
+                    {isEditing ? (
+                      <>
+                        <button
+                          onClick={cancelEditing}
+                          className={`
+                            flex-1 inline-flex items-center justify-center px-4 py-3 rounded-xl text-sm font-medium transition-colors
+                            bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 
+                            text-gray-900 dark:text-white border border-gray-200 dark:border-gray-600
+                          `}
+                        >
+                          <X size={16} className="mr-2" />
+                          Cancel
+                        </button>
+                        <button
+                          onClick={saveNote}
+                          disabled={isSaving}
+                          className={`
+                            flex-1 inline-flex items-center justify-center px-4 py-3 rounded-xl text-sm font-medium transition-colors
+                            bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400
+                            text-white border border-blue-600 disabled:opacity-50
+                          `}
+                        >
+                          <Save size={16} className="mr-2" />
+                          {isSaving ? 'Saving...' : 'Save'}
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          onClick={startEditing}
+                          className={`
+                            flex-1 inline-flex items-center justify-center px-4 py-3 rounded-xl text-sm font-medium transition-colors
+                            bg-blue-600 hover:bg-blue-700 text-white border border-blue-600
+                          `}
+                          title="Edit note"
+                        >
+                          <Edit3 size={16} className="mr-2" />
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => setShowShareModal(true)}
+                          className={`
+                            flex-1 inline-flex items-center justify-center px-4 py-3 rounded-xl text-sm font-medium transition-colors
+                            bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 
+                            text-gray-900 dark:text-white border border-gray-200 dark:border-gray-600
+                          `}
+                        >
+                          <Share2 size={16} className="mr-2" />
+                          Share
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+                
+                {/* Timestamp - Separate section with subtle styling */}
+                <div className="px-4 pb-4 border-t border-gray-100 dark:border-gray-700 pt-3">
+                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                    Generated {formatDate(selectedNote.generated_at)}
+                    {selectedNote.last_edited && selectedNote.last_edited !== selectedNote.generated_at && (
+                      <span> • Edited {formatDate(selectedNote.last_edited)}</span>
+                    )}
+                  </p>
+                </div>
+              </div>
+
+              {/* Desktop: Horizontal layout (unchanged) */}
+              <div className="hidden lg:block p-6">
+              <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-4">
+                  <div className="min-w-0 flex-1">
+                  {isEditing ? (
+                    <input
+                      type="text"
+                      value={editedTitle}
+                      onChange={(e) => setEditedTitle(e.target.value)}
+                      className={`
+                          text-xl xl:text-2xl font-bold leading-tight bg-transparent border-none outline-none
+                        text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500
+                        w-full focus:ring-2 focus:ring-blue-500 rounded px-2 py-1 -mx-2
+                      `}
+                      placeholder="Enter note title..."
+                    />
+                  ) : (
+                      <h1 className="text-xl xl:text-2xl font-bold leading-tight text-gray-900 dark:text-white">
                       {selectedNote.custom_title || selectedNote.session?.topic || 'Study Notes'}
                     </h1>
                   )}
@@ -871,12 +964,13 @@ ${note.content}
                   )}
                 </div>
               </div>
-              <p className="text-sm text-gray-600 dark:text-gray-400 pl-12 lg:pl-0">
+                <p className="text-sm text-gray-600 dark:text-gray-400">
                 Generated {formatDate(selectedNote.generated_at)}
                 {selectedNote.last_edited && selectedNote.last_edited !== selectedNote.generated_at && (
                   <span> • Edited {formatDate(selectedNote.last_edited)}</span>
                 )}
               </p>
+              </div>
             </div>
 
             {/* Mobile Back Button - Clean text link style */}

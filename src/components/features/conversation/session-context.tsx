@@ -256,15 +256,26 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
       if (!response.ok) {
         const errorData = await response.json()
-        throw new Error(errorData.error || 'Failed to save session')
+        
+        // Handle specific error cases
+        if (response.status === 500 && errorData.error?.includes('Database configuration')) {
+          console.warn('⚠️ [SessionProvider] Database not configured, continuing with local session only')
+          // Update hash to prevent repeated attempts
+          lastSavedSessionRef.current = sessionHash
+          return
+        }
+        
+        throw new Error(errorData.error || `HTTP ${response.status}: Failed to save session`)
       }
 
       // Update last saved session hash
       lastSavedSessionRef.current = sessionHash
       console.log('✅ [SessionProvider] Session auto-saved to database')
     } catch (error) {
-      console.error('❌ [SessionProvider] Database save failed:', error)
+      console.warn('⚠️ [SessionProvider] Database save failed, continuing with local session:', error)
       // Don't throw - continue with local session management
+      // Update hash to prevent repeated failed attempts
+      lastSavedSessionRef.current = sessionHash
     } finally {
       setIsSaving(false)
     }
@@ -275,7 +286,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     if (!session) return null
     
     try {
-      // 1. Mark session as complete and save
+      // 1. Mark session as complete and save (but don't fail if database is unavailable)
       const completedSession = { ...session, isComplete: true }
       const sessionHash = JSON.stringify({
         sessionId: completedSession.sessionId,
@@ -285,7 +296,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         currentSubtopicIndex: completedSession.currentSubtopicIndex,
         isComplete: completedSession.isComplete
       })
-      await saveSessionToDatabase(completedSession, sessionHash)
+      
+      // Try to save to database, but continue even if it fails
+      try {
+        await saveSessionToDatabase(completedSession, sessionHash)
+      } catch (dbError) {
+        console.warn('⚠️ [SessionProvider] Database save failed during completion, continuing with note generation:', dbError)
+      }
       
       // 2. Generate study notes
       console.log('📝 [SessionProvider] Generating study notes for session:', session.sessionId)
@@ -297,7 +314,17 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
       if (!response.ok) {
         const errorData = await response.json()
-        throw new Error(errorData.error || 'Failed to generate study notes')
+        
+        // Handle specific error cases
+        if (response.status === 500 && errorData.error?.includes('Database configuration')) {
+          console.warn('⚠️ [SessionProvider] Database not configured, note generation unavailable')
+          return { 
+            error: 'Note generation requires database configuration',
+            canRetry: false 
+          }
+        }
+        
+        throw new Error(errorData.error || `HTTP ${response.status}: Failed to generate study notes`)
       }
 
       const data = await response.json()
@@ -309,7 +336,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       }
     } catch (error) {
       console.error('❌ [SessionProvider] Failed to generate study notes:', error)
-      return null
+      return { 
+        error: error instanceof Error ? error.message : 'Unknown error occurred',
+        canRetry: true 
+      }
     }
   }
 
