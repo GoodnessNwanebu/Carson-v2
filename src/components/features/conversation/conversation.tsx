@@ -834,9 +834,13 @@ export function Conversation({
     // Start long press timer (500ms)
     longPressTimerRef.current = setTimeout(() => {
       setLongPressedMessageId(messageId);
-      // Add haptic feedback if available
-      if (navigator.vibrate) {
-        navigator.vibrate(50);
+      // Add haptic feedback if available (requires user gesture)
+      try {
+        if ('vibrate' in navigator && navigator.vibrate) {
+          navigator.vibrate(50);
+        }
+      } catch (error) {
+        // Silently ignore vibration errors
       }
     }, 500);
   };
@@ -978,7 +982,7 @@ export function Conversation({
           minHeight: 0
         }}
       >
-        <div className="max-w-4xl mx-auto space-y-2 md:space-y-3">
+        <div className="max-w-4xl mx-auto space-y-1 md:space-y-2">
           {(session?.history ?? []).map((message) => (
             <div
               key={message.id}
@@ -991,7 +995,7 @@ export function Conversation({
                 <div
                   data-message-bubble
                   className={cn(
-                    "px-4 md:px-6 py-3 md:py-4 break-words relative",
+                    "px-4 md:px-6 py-3 md:py-4 break-words relative select-none md:select-text",
                     message.role === "assistant"
                       ? "bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 max-w-full md:max-w-3xl border border-gray-200 dark:border-gray-700 rounded-xl sm:rounded-2xl rounded-bl-md shadow-sm"
                       : "bg-blue-600 dark:bg-blue-600 text-white max-w-full md:max-w-3xl rounded-2xl rounded-br-md shadow-sm"
@@ -1015,7 +1019,13 @@ export function Conversation({
                       longPressTimerRef.current = null;
                     }
                   }}
-                  style={{ touchAction: 'pan-y' }}
+                  style={{ 
+                    touchAction: 'pan-y',
+                    userSelect: 'none',
+                    WebkitUserSelect: 'none',
+                    WebkitTouchCallout: 'none',
+                    WebkitTapHighlightColor: 'transparent'
+                  }}
                   onContextMenu={(e) => {
                     // Prevent default context menu on long press
                     e.preventDefault();
