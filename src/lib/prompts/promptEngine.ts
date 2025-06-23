@@ -2,7 +2,7 @@
 
 import { CarsonSessionContext } from './carsonTypes';
 import { generateTransition, assessUserPerformance } from './transitionEngine';
-import { shouldTestRetention, generateRetentionQuestion, generateMetacognitiveQuestion, generateSelfAssessmentPrompt } from './assessmentEngine';
+import { shouldTestRetention, generateRetentionQuestion, generateMetacognitiveQuestion } from './assessmentEngine';
 import { detectConversationalIntent, generateConversationalResponse } from './conversational-intelligence';
 
 interface PromptContext extends CarsonSessionContext {
@@ -388,7 +388,7 @@ Keep it conversational - they're doing fine.
   // **NEW**: Check if we should test retention of previous learning
   const retentionTest = shouldTestRetention(safeContext);
   if (retentionTest) {
-    const retentionQuestion = generateRetentionQuestion(retentionTest, safeContext);
+    const retentionQuestion = generateRetentionQuestion(safeContext);
     return `
 You are Carson, a supportive medical tutor who ensures lasting mastery.
 
@@ -475,7 +475,7 @@ NO metacognitive questions - just move forward. Ask about the ${nextSubtopic.tit
 
   // Use the global session history for context
   const history = safeContext.history
-    .map((msg) => `${msg.role === "user" ? "Student" : "Carson"}: ${msg.content}`)
+    .map((msg) => `${msg.role === "user" ? "Student" : "Assistant"}: ${msg.content}`)
     .join("\n");
 
   // Generate context-aware prompt based on current state and assessment
@@ -542,6 +542,8 @@ ${instruction}
 
 Recent conversation:
 ${history.slice(-400)}
+
+IMPORTANT: Respond ONLY as Carson speaking directly. Do NOT include any labels like "Carson:" or "Student:" in your response. Just give Carson's direct words.
 
 Respond like a real doctor having a conversation. Ask ONE question max. If they don't know something, just explain it clearly.
 `.trim();

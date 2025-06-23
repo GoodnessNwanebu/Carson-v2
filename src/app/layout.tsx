@@ -7,7 +7,7 @@ import { SidebarProvider } from "@/components/features/sidebar/sidebar-context";
 import { KnowledgeMapProvider } from "@/components/features/knowledge-map/knowledge-map-context";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { AppLayout } from "@/components/app-layout";
-import { NotificationProvider } from "@/components/ui/notification-system";
+import { Toaster } from 'sonner';
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -25,17 +25,27 @@ export default function RootLayout({
     <html lang="en">
       <body className={inter.className}>
         <ThemeProvider>
-          <NotificationProvider>
-            <SidebarProvider>
-              <KnowledgeMapProvider>
-                <SessionProvider>
-                  <ErrorBoundary>
-                    <AppLayout>{children}</AppLayout>
-                  </ErrorBoundary>
-                </SessionProvider>
-              </KnowledgeMapProvider>
-            </SidebarProvider>
-          </NotificationProvider>
+          <SidebarProvider>
+            <KnowledgeMapProvider>
+              <SessionProvider>
+                <ErrorBoundary>
+                  <AppLayout>{children}</AppLayout>
+                </ErrorBoundary>
+              </SessionProvider>
+            </KnowledgeMapProvider>
+          </SidebarProvider>
+          <Toaster 
+            position="top-center"
+            richColors
+            closeButton
+            toastOptions={{
+              style: {
+                background: 'hsl(var(--background))',
+                color: 'hsl(var(--foreground))',
+                border: '1px solid hsl(var(--border))',
+              },
+            }}
+          />
         </ThemeProvider>
       </body>
     </html>

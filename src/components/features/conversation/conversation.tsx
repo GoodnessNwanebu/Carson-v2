@@ -11,11 +11,12 @@ import { useSidebarState } from "../sidebar/sidebar-context"
 import { callLLM } from "@/lib/prompts/llm-service"
 import { CarsonSessionContext } from "@/lib/prompts/carsonTypes"
 import { v4 as uuidv4 } from 'uuid';
-import { assessUserResponseV2Parallel as assessUserResponse, AssessmentResult, ResponseType, updateSessionAfterAssessment } from "@/lib/prompts/assessmentEngine";
+import { assessUserResponseV3, AssessmentResult, updateSessionAfterAssessment, NextAction, AssessmentPhase } from "@/lib/prompts/assessmentEngine";
+import { generateSubtopicRequirements, SubtopicRequirements } from "@/lib/prompts/triagingOrchestrator";
 import { detectConversationalIntent } from "@/lib/prompts/conversational-intelligence";
 import { CompletionCelebration } from "../knowledge-map/knowledge-map-animations";
 import { Button } from "@/components/ui/button"
-import { useNotificationHelpers } from "@/components/ui/notification-system"
+import { useNotifications } from "@/hooks/use-notifications"
 
 // Create a context for scroll state sharing
 import { createContext, useContext } from "react"
@@ -83,6 +84,43 @@ const extractTopicFromInput = (input: string): string => {
   return input;
 };
 
+/**
+ * PRIORITY 1 FIX: Calculate sophisticated subtopic status based on assessment phase and progress
+ * Uses actual assessment engine logic instead of oversimplified answer quality mapping
+ */
+const calculateSubtopicStatus = (
+  assessmentResult: AssessmentResult, 
+  requirements: SubtopicRequirements, 
+  sessionUpdates: any
+): "red" | "yellow" | "green" | "unassessed" => {
+  const { currentPhase, nextAction, answerQuality } = assessmentResult;
+  const questionsUsed = sessionUpdates.questionsAskedInCurrentSubtopic || 0;
+  
+  // If we're completing the subtopic, it's mastered
+  if (nextAction === 'complete_subtopic') {
+    return "green";
+  }
+  
+  // If we're still in initial assessment phase with good answers, it's progressing well
+  if (currentPhase === 'initial_assessment' && ['excellent', 'good'].includes(answerQuality)) {
+    return "yellow"; // Making progress
+  }
+  
+  // If we're in targeted remediation but making progress
+  if (currentPhase === 'targeted_remediation' && ['excellent', 'good'].includes(answerQuality)) {
+    return "yellow"; // Addressing gaps
+  }
+  
+  // If we're struggling or have used many questions without progress
+  if (answerQuality === 'confused' || 
+      (questionsUsed >= requirements.maxQuestions - 1 && currentPhase !== 'complete')) {
+    return "red"; // Needs help
+  }
+  
+  // Default to yellow for active assessment
+  return "yellow";
+};
+
 // Accept initialTopic and onInitialTopicUsed as props
 export function Conversation({ 
   initialTopic, 
@@ -108,7 +146,7 @@ export function Conversation({
   console.log("[Conversation] Component rendered");
   const { session, addMessage, updateSession, clearSession, startSession, moveToNextSubtopic, checkSubtopicCompletion, isSessionComplete, completeSessionAndGenerateNotes } = useSession()
   const { setSidebarOpen } = useSidebarState()
-  const { success: showSuccessNotification, error: showErrorNotification } = useNotificationHelpers()
+  const { success: showSuccessNotification, error: showErrorNotification } = useNotifications()
   
   const [input, setInput] = useState("")
   const { updateTopicStatus, updateTopicProgress, setTopics, setCurrentTopicName, setIsLoading: setKnowledgeMapLoading, setCurrentSubtopicIndex, topics, currentTopicName } = useKnowledgeMap()
@@ -332,7 +370,7 @@ export function Conversation({
             // No assessment needed, just continue to LLM call
           } else {
             // Normal assessment flow for medical responses
-            assessmentResult = await assessUserResponse(messageContent, session);
+            assessmentResult = await assessUserResponseV3(messageContent, session);
             
             // Only update session if we got an actual assessment (not null for conversational responses)
             if (assessmentResult) {
@@ -343,27 +381,51 @@ export function Conversation({
               // Update knowledge map progress and status based on assessment
               const currentSubtopic = session.subtopics[session.currentSubtopicIndex];
               if (currentSubtopic) {
-                // Update progress tracking
+                // Update progress tracking using actual assessment engine requirements
+                const requirements = generateSubtopicRequirements(currentSubtopic.title, session.topic || "Medical Topic");
+                const triagingStatus = currentSubtopic.triagingStatus;
+                
+                // **CRITICAL FIX**: Apply statusUpdate from assessment engine to subtopic
+                // Initialize triaging status if it doesn't exist
+                const currentTriagingStatus = triagingStatus || {
+                  hasInitialAssessment: false,
+                  addressedGaps: [],
+                  acknowledgedGaps: [],
+                  questionsUsed: 0,
+                  hasTestedApplication: false
+                };
+                
+                let updatedTriagingStatus = currentTriagingStatus;
+                if (assessmentResult.statusUpdate) {
+                  // Update the subtopic's triagingStatus with the assessment engine's updates
+                  updatedTriagingStatus = {
+                    ...currentTriagingStatus,
+                    ...assessmentResult.statusUpdate
+                  };
+                  
+                  // Update the subtopic in the session with the new triaging status
+                  const updatedSubtopics = [...session.subtopics];
+                  updatedSubtopics[session.currentSubtopicIndex] = {
+                    ...currentSubtopic,
+                    triagingStatus: updatedTriagingStatus
+                  };
+                  
+                  // Add this to session updates so it gets persisted
+                  sessionUpdates.subtopics = updatedSubtopics;
+                }
+                
                 updateTopicProgress(currentSubtopic.id, {
                   questionsAnswered: (sessionUpdates.questionsAskedInCurrentSubtopic ?? session.questionsAskedInCurrentSubtopic) + 1,
-                  totalQuestions: 3, // Assuming 3 questions per subtopic
-                  currentQuestionType: sessionUpdates.currentQuestionType ?? session.currentQuestionType
+                  totalQuestions: requirements.maxQuestions, // Use actual max questions from assessment engine
+                  currentQuestionType: sessionUpdates.currentQuestionType ?? session.currentQuestionType,
+                  // Progress dots information - confidence building phases - USE UPDATED STATUS
+                  questionsUsed: updatedTriagingStatus.questionsUsed,
+                  currentPhase: assessmentResult.currentPhase
                 });
                 
-                // Update status based on assessment - but delay celebration until after API call
-                switch (assessmentResult.answerQuality) {
-                  case 'excellent':
-                  case 'good':
-                    updateTopicStatus(currentSubtopic.id, "green");
-                    break;
-                  case 'partial':
-                    updateTopicStatus(currentSubtopic.id, "yellow");
-                    break;
-                  case 'incorrect':
-                  case 'confused':
-                    updateTopicStatus(currentSubtopic.id, "red");
-                    break;
-                }
+                // Update status based on sophisticated assessment phase and progress
+                const newStatus = calculateSubtopicStatus(assessmentResult, requirements, sessionUpdates);
+                updateTopicStatus(currentSubtopic.id, newStatus);
               }
             } else {
               console.log("[Conversation] No assessment - conversational response detected");

@@ -14,6 +14,9 @@ export interface Topic {
     questionsAnswered: number
     totalQuestions: number
     currentQuestionType: 'parent' | 'child' | 'checkin'
+    // Progress dots information - confidence building phases
+    questionsUsed?: number
+    currentPhase?: 'initial_assessment' | 'targeted_remediation' | 'application' | 'gap_acknowledgment' | 'complete'
   }
 }
 

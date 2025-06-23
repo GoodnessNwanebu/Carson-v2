@@ -8,6 +8,45 @@ import { cn } from "@/lib/utils"
 import { Map, CheckCircle, AlertCircle, HelpCircle, Clock } from "lucide-react"
 import { SlideInAnimation } from "./knowledge-map-animations"
 
+// Progress dots component for showing subtopic progress
+function ProgressDots({ currentPhase, questionsUsed }: { 
+  currentPhase?: 'initial_assessment' | 'targeted_remediation' | 'application' | 'gap_acknowledgment' | 'complete';
+  questionsUsed?: number;
+}) {
+  // Map phases to confidence building progression
+  const getPhaseProgress = (phase?: string) => {
+    switch (phase) {
+      case 'initial_assessment': return 1; // Exploring understanding
+      case 'targeted_remediation': return 2; // Building foundation
+      case 'application': return 3; // Testing confidence
+      case 'gap_acknowledgment': return 4; // Acknowledging limits
+      case 'complete': return 4; // Confident mastery
+      default: return 0;
+    }
+  };
+  
+  const progress = getPhaseProgress(currentPhase);
+  const totalPhases = 4;
+  
+  const dots = Array.from({ length: totalPhases }, (_, i) => (
+    <span
+      key={i}
+      className={cn(
+        "w-1.5 h-1.5 rounded-full transition-colors duration-200",
+        i < progress ? "bg-blue-500" : "bg-gray-300"
+      )}
+    />
+  ));
+  
+  return (
+    <div className="flex items-center space-x-1">
+      <div className="flex space-x-0.5">
+        {dots}
+      </div>
+    </div>
+  );
+}
+
 // Custom hook for mobile detection
 function useMobile() {
   const [isMobile, setIsMobile] = useState(false)
@@ -147,6 +186,15 @@ export function KnowledgeMapPanel() {
                           )}>
                             {topic.name}
                           </h4>
+                          {/* Progress dots - only show for active subtopic */}
+                          {isActive && topic.progress?.currentPhase !== undefined && topic.progress?.questionsUsed !== undefined && (
+                            <div className="mt-2">
+                              <ProgressDots 
+                                currentPhase={topic.progress.currentPhase} 
+                                questionsUsed={topic.progress.questionsUsed} 
+                              />
+                            </div>
+                          )}
                         </div>
                       </div>
                     </div>

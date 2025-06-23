@@ -11,7 +11,7 @@ import { useSession } from "./features/conversation/session-context"
 import { cn } from "@/lib/utils"
 import { CarsonMainContent } from "./carson-main-content"
 import { useKnowledgeMap } from "./features/knowledge-map/knowledge-map-context"
-import { useNotificationHelpers } from "@/components/ui/notification-system"
+import { useNotifications } from "@/hooks/use-notifications"
 
 // Create context for new chat functionality
 interface NewChatContextType {
@@ -47,7 +47,7 @@ function CarsonUIContent() {
   const { isMapOpen, toggleMap, clearKnowledgeMap } = useKnowledgeMap()
   const { session, clearSession } = useSession()
   const [contentWidth, setContentWidth] = useState("max-w-2xl")
-  const { success: notifySuccess, error: notifyError, warning: notifyWarning, info: notifyInfo } = useNotificationHelpers()
+  const { success: notifySuccess, error: notifyError, warning: notifyWarning, info: notifyInfo } = useNotifications()
 
   // **CLEAN SEPARATION**: Handle new vs existing conversations separately
   const hasExistingConversation = !!(session && session.history && session.history.length > 0)
@@ -242,7 +242,7 @@ function CarsonUIContent() {
         setIsRecording(false);
         
         if (chunks.length === 0) {
-          notifyError('No Audio Detected', 'Please check your microphone and try again.');
+          notifyError('No Audio Detected', { description: 'Please check your microphone and try again.' });
           return;
         }
 
@@ -253,7 +253,7 @@ function CarsonUIContent() {
         // Warn user about large files
         if (audioBlob.size > 10 * 1024 * 1024) { // > 10MB
           console.warn('[Voice] Large audio file detected, transcription may take longer...');
-          notifyInfo('Processing Large Recording', 'Your recording is quite long. Transcription may take a minute...');
+          notifyInfo('Processing Large Recording', { description: 'Your recording is quite long. Transcription may take a minute...' });
         }
         
         // Transcribe audio with enhanced error handling
@@ -308,15 +308,15 @@ function CarsonUIContent() {
             const durationText = recordingDuration > 60 
               ? `${Math.floor(recordingDuration / 60)}:${(recordingDuration % 60).toString().padStart(2, '0')}`
               : `${recordingDuration}s`;
-            notifySuccess('Voice Input Added', `Your ${durationText} recording has been transcribed and added.`);
+            notifySuccess('Voice Input Added', { description: `Your ${durationText} recording has been transcribed and added.` });
           } else {
-            notifyError('No Speech Detected', 'Please try speaking more clearly.');
+            notifyError('No Speech Detected', { description: 'Please try speaking more clearly.' });
           }
         } catch (error: any) {
           console.error('[Voice] Transcription failed:', error);
           
           if (error.name === 'AbortError') {
-            notifyError('Transcription Timeout', 'Your recording was too long to process. Please try a shorter recording.');
+            notifyError('Transcription Timeout', { description: 'Your recording was too long to process. Please try a shorter recording.' });
           } else {
             const errorMessage = error.message || 'Voice transcription failed. Please try again.';
             notifyError('Transcription Failed', errorMessage);
