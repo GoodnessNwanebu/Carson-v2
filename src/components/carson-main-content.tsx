@@ -132,17 +132,7 @@ export function CarsonMainContent({
     )}>
       {inConversation ? (
         // Conversation mode
-        <Conversation 
-          initialTopic={initialTopic} 
-          onInitialTopicUsed={() => setInitialTopic(null)}
-          isRecording={isRecording}
-          mediaRecorder={mediaRecorder}
-          audioChunks={audioChunks}
-          isTranscribing={isTranscribing}
-          toggleVoiceRecording={toggleVoiceRecording}
-          inputRef={inputRef}
-          onVoiceTranscript={conversationVoiceCallback}
-        />
+        <Conversation />
       ) : (
         // Initial input mode
         <div className="flex flex-col justify-center items-center h-full min-h-screen bg-gradient-to-br from-gray-50 via-blue-50/30 to-gray-50 dark:from-gray-900 dark:via-gray-900 dark:to-gray-800">

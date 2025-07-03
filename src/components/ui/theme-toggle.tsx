@@ -28,7 +28,7 @@ export function ThemeToggle({ collapsed }: ThemeToggleProps) {
       variant="ghost"
       className={cn(
         "text-gray-300 hover:text-white hover:bg-gray-800 dark:hover:bg-gray-800 transition-all duration-200",
-        "w-full justify-start gap-3 py-3 md:w-auto",
+        "w-full justify-start gap-3 py-3 px-3 text-base",
         collapsed && "md:w-10 md:h-10 md:p-0 md:mx-auto md:justify-center",
         isTransitioning && "pointer-events-none opacity-70"
       )}
@@ -39,7 +39,7 @@ export function ThemeToggle({ collapsed }: ThemeToggleProps) {
       <div className="relative">
         {getIcon()}
       </div>
-      <span className={cn("text-base", collapsed && "md:hidden")}>{getLabel()}</span>
+      <span className={cn("", collapsed && "md:hidden")}>{getLabel()}</span>
     </Button>
   )
 } 

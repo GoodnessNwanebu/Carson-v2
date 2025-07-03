@@ -2,7 +2,7 @@
 
 import type React from "react"
 import { Button } from "@/components/ui/button"
-import { BookOpen, Clock, FileText, LogOut, Menu, MessageSquarePlus, Route, Settings, User, X, HelpCircle } from "lucide-react"
+import { Clock, FileText, LogOut, Menu, MessageSquarePlus, PanelLeft, Route, Settings, User, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useSidebarState } from "./sidebar-context"
 import { useRouter, usePathname } from "next/navigation"
@@ -99,12 +99,12 @@ export function Sidebar({ onNewChat }: SidebarProps) {
               variant="ghost"
               size="icon"
               className={cn(
-                "h-8 w-8 rounded-md text-gray-400 hover:text-white hover:bg-gray-800 dark:hover:bg-gray-800 hidden md:flex",
+                "h-10 w-10 rounded-md text-gray-400 hover:text-white hover:bg-gray-800 dark:hover:bg-gray-800 hidden md:flex items-center justify-center",
                 collapsed && "mx-auto",
               )}
               onClick={() => setCollapsed(!collapsed)}
             >
-              {collapsed ? "→" : "←"}
+              <PanelLeft size={16} />
             </Button>
           </div>
           <div className={cn("mb-8", collapsed ? "md:mx-0" : "mx-2")}>
@@ -122,7 +122,7 @@ export function Sidebar({ onNewChat }: SidebarProps) {
                 handleNavigation('/')
               }}
             >
-              <MessageSquarePlus size={collapsed ? 16 : 18} className="flex-shrink-0" />
+              <MessageSquarePlus size={16} className="flex-shrink-0" />
               <span className={cn("text-[15px]", collapsed && "md:hidden")}>New conversation</span>
               
               {/* Subtle shine effect - hide when collapsed on desktop */}
@@ -132,56 +132,37 @@ export function Sidebar({ onNewChat }: SidebarProps) {
         </div>
 
         {/* Middle section with main navigation */}
-        <div className="flex-1 overflow-auto px-4 py-6">
-          <nav className="space-y-2">
-            <NavItem 
-              icon={Clock} 
-              label="Recents" 
-              collapsed={collapsed} 
-              active={pathname === '/recents'}
-              onClick={() => handleNavigation('/recents')} 
-            />
-            <NavItem 
-              icon={FileText} 
-              label="Journal" 
-              collapsed={collapsed} 
-              active={pathname === '/journal'}
-              onClick={() => handleNavigation('/journal')} 
-            />
-            <NavItem 
-              icon={Route} 
-              label="Knowledge Journey" 
-              collapsed={collapsed} 
-              active={pathname === '/journey'}
-              onClick={() => handleNavigation('/journey')} 
-            />
-            <div className="relative">
+        <div className={cn("flex-1 overflow-auto py-6", collapsed ? "px-2" : "px-4")}>
+          <nav className="space-y-3">
+            {/* Main Navigation Group */}
+            <div className="space-y-2">
               <NavItem 
-                icon={BookOpen} 
-                label="Explorations" 
+                icon={Clock} 
+                label="Recents" 
                 collapsed={collapsed} 
-                active={pathname === '/explorations'}
-                onClick={() => handleNavigation('/explorations')} 
+                active={pathname === '/recents'}
+                onClick={() => handleNavigation('/recents')} 
               />
-              
-              {/* Explorations submenu when expanded */}
-              {!collapsed && (
-                <div className="ml-6 mt-3 space-y-2">
-                  <NavSubItem
-                    icon={HelpCircle}
-                    label="Past Questions"
-                    collapsed={collapsed}
-                    active={pathname === '/question-solver'}
-                    onClick={() => handleNavigation('/question-solver')}
-                  />
-                </div>
-              )}
+              <NavItem 
+                icon={FileText} 
+                label="Journal" 
+                collapsed={collapsed} 
+                active={pathname === '/journal'}
+                onClick={() => handleNavigation('/journal')} 
+              />
+              <NavItem 
+                icon={Route} 
+                label="Knowledge Journey" 
+                collapsed={collapsed} 
+                active={pathname === '/journey'}
+                onClick={() => handleNavigation('/journey')} 
+              />
             </div>
           </nav>
         </div>
 
         {/* Bottom section with settings and profile */}
-        <div className="border-t border-gray-800 dark:border-gray-700 px-4 py-6">
+        <div className={cn("border-t border-gray-800 dark:border-gray-700 py-6", collapsed ? "px-2" : "px-4")}>
           <div className="space-y-2">
             <NavItem 
               icon={Settings} 
@@ -240,28 +221,4 @@ function NavItem({ icon: Icon, label, collapsed, active, onClick }: NavItemProps
   )
 }
 
-interface NavSubItemProps {
-  icon: React.ElementType
-  label: string
-  collapsed: boolean
-  active?: boolean
-  onClick?: () => void
-}
 
-function NavSubItem({ icon: Icon, label, collapsed, active, onClick }: NavSubItemProps) {
-  return (
-    <Button
-      variant="ghost"
-      size="sm"
-      className={cn(
-        "text-gray-400 hover:text-white hover:bg-gray-800 dark:hover:bg-gray-800 text-sm",
-        active && "bg-gray-800 dark:bg-gray-800 text-white",
-        "w-full justify-start gap-2 py-2 px-3",
-      )}
-      onClick={onClick}
-    >
-      <Icon size={14} />
-      <span>{label}</span>
-    </Button>
-  )
-}
